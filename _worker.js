@@ -38,7 +38,7 @@ export default {
 		} else {
 			subConverter = subConverter.split("//")[1] || subConverter;
 		}
-		subConfig = env.SUBCONFIG || subConfig;
+		subConfig = 规范化订阅配置链接(env.SUBCONFIG || subConfig);
 		FileName = env.SUBNAME || FileName;
 
 		const currentDate = new Date();
@@ -88,14 +88,15 @@ export default {
 				}
 			}
 
+			if (userAgent.includes('mozilla') && !url.search) {
+				if (env.KV) await 迁移地址列表(env, 'LINK.txt');
+				await sendMessage(`#编辑订阅 ${FileName}`, request.headers.get('CF-Connecting-IP'), `UA: ${userAgentHeader}</tg-spoiler>\n域名: ${url.hostname}\n<tg-spoiler>入口: ${url.pathname + url.search}</tg-spoiler>`);
+				return await KV(request, env, 'LINK.txt', 访客订阅);
+			}
+
 			if (env.KV) {
 				await 迁移地址列表(env, 'LINK.txt');
-				if (userAgent.includes('mozilla') && !url.search) {
-					await sendMessage(`#编辑订阅 ${FileName}`, request.headers.get('CF-Connecting-IP'), `UA: ${userAgentHeader}</tg-spoiler>\n域名: ${url.hostname}\n<tg-spoiler>入口: ${url.pathname + url.search}</tg-spoiler>`);
-					return await KV(request, env, 'LINK.txt', 访客订阅);
-				} else {
-					MainData = await env.KV.get('LINK.txt') || MainData;
-				}
+				MainData = await env.KV.get('LINK.txt') || MainData;
 			} else {
 				MainData = env.LINK || MainData;
 				if (env.LINKSUB) urls = await ADD(env.LINKSUB);
@@ -351,6 +352,20 @@ function clashFix(content) {
 		content = result;
 	}
 	return content;
+}
+
+function 规范化订阅配置链接(configUrl) {
+	if (!configUrl || typeof configUrl !== 'string') return configUrl;
+	let normalized = configUrl.trim();
+	normalized = normalized.replace(
+		/^https:\/\/raw\.githubusercontent\.com\/([^/]+)\/([^/]+)\/refs\/heads\/([^/]+)\/(.+)$/i,
+		'https://raw.githubusercontent.com/$1/$2/$3/$4'
+	);
+	normalized = normalized.replace(
+		/^https:\/\/github\.com\/([^/]+)\/([^/]+)\/blob\/([^/]+)\/(.+)$/i,
+		'https://raw.githubusercontent.com/$1/$2/$3/$4'
+	);
+	return normalized;
 }
 
 function 提取Clash代理内容(content) {
