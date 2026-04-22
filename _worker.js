@@ -141,17 +141,12 @@ export default {
 				const 请求订阅响应内容 = await getSUB(订阅链接数组, request, 追加UA, userAgentHeader);
 				console.log(请求订阅响应内容);
 				req_data += 请求订阅响应内容[0].join('\n');
-				订阅转换URL += "|" + 请求订阅响应内容[1];
-				if (订阅格式 == 'base64' && !isSubConverterRequest && 请求订阅响应内容[1].includes('://')) {
-					subConverterUrl = `${subProtocol}://${subConverter}/sub?target=mixed&url=${encodeURIComponent(请求订阅响应内容[1])}&insert=false&config=${encodeURIComponent(subConfigInfo.converterUrl)}&emoji=true&list=false&tfo=false&scv=true&fdn=false&sort=false&new_name=true`;
-					try {
-						const subConverterResponse = await fetch(subConverterUrl, { headers: { 'User-Agent': 'v2rayN/CF-Workers-SUB  (https://github.com/cmliu/CF-Workers-SUB)' } });
-						if (subConverterResponse.ok) {
-							const subConverterContent = await subConverterResponse.text();
-							req_data += '\n' + atob(subConverterContent);
-						}
-					} catch (error) {
-						console.log('订阅转换请回base64失败，检查订阅转换后端是否正常运行');
+				if (请求订阅响应内容[1].includes('://')) {
+					const 提取配置节点 = await extractConfigProxies(请求订阅响应内容[1], subProtocol, subConverter, subConfigInfo.converterUrl);
+					if (提取配置节点) {
+						req_data += '\n' + 提取配置节点;
+					} else if (订阅格式 !== 'base64') {
+						订阅转换URL += "|" + 请求订阅响应内容[1];
 					}
 				}
 			}
@@ -372,6 +367,47 @@ function tryDecodeInlineSubConfig(value) {
 	try {
 		return base64Decode(value);
 	} catch (error) {
+		return '';
+	}
+}
+
+async function extractConfigProxies(configUrls, subProtocol, subConverter, configUrl) {
+	if (!configUrls || !configUrls.includes('://')) {
+		return '';
+	}
+
+	const query = new URLSearchParams({
+		target: 'mixed',
+		url: configUrls,
+		insert: 'false',
+		emoji: 'true',
+		list: 'false',
+		tfo: 'false',
+		scv: 'true',
+		fdn: 'false',
+		sort: 'false',
+		new_name: 'true',
+	});
+	if (configUrl) {
+		query.set('config', configUrl);
+	}
+
+	const subConverterUrl = `${subProtocol}://${subConverter}/sub?${query.toString()}`;
+	try {
+		const subConverterResponse = await fetch(subConverterUrl, {
+			headers: {
+				'User-Agent': 'v2rayN/CF-Workers-SUB  (https://github.com/cmliu/CF-Workers-SUB)'
+			}
+		});
+		if (!subConverterResponse.ok) {
+			console.log(`提取第三方订阅节点失败: ${subConverterResponse.status} ${subConverterResponse.statusText}`);
+			return '';
+		}
+
+		const subConverterContent = await subConverterResponse.text();
+		return base64Decode(subConverterContent);
+	} catch (error) {
+		console.log('提取第三方订阅节点失败，检查订阅转换后端是否正常运行');
 		return '';
 	}
 }
