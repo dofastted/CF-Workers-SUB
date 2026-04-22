@@ -20,6 +20,7 @@ let urls = [];
 let subConverter = "SUBAPI.cmliussss.net"; //在线订阅转换后端，目前使用CM的订阅转换功能。支持自建psub 可自行搭建https://github.com/bulianglin/psub
 let subConfig = "https://raw.githubusercontent.com/cmliu/ACL4SSR/main/Clash/config/ACL4SSR_Online_MultiCountry.ini"; //订阅配置文件
 let subProtocol = 'https';
+const INLINE_SUBCONFIG_PATH = '/__subconfig__';
 
 export default {
 	async fetch(request, env) {
@@ -38,13 +39,15 @@ export default {
 		} else {
 			subConverter = subConverter.split("//")[1] || subConverter;
 		}
-		subConfig = env.SUBCONFIG || subConfig;
+		const rawSubConfig = env.SUBCONFIG || subConfig;
 		FileName = env.SUBNAME || FileName;
 
 		const currentDate = new Date();
 		currentDate.setHours(0, 0, 0, 0);
 		const timeTemp = Math.ceil(currentDate.getTime() / 1000);
 		const fakeToken = await MD5MD5(`${mytoken}${timeTemp}`);
+		const subConfigInfo = resolveSubConfig(rawSubConfig, url.origin, fakeToken);
+		subConfig = subConfigInfo.displayValue;
 		guestToken = env.GUESTTOKEN || env.GUEST || guestToken;
 		if (!guestToken) guestToken = await MD5MD5(mytoken);
 		const 访客订阅 = guestToken;
@@ -54,6 +57,19 @@ export default {
 		total = total * 1099511627776;
 		let expire = Math.floor(timestamp / 1000);
 		SUBUpdateTime = env.SUBUPTIME || SUBUpdateTime;
+
+		if (subConfigInfo.inlineContent && url.pathname === INLINE_SUBCONFIG_PATH) {
+			if (![mytoken, fakeToken].includes(token)) {
+				return new Response('Not found', { status: 404 });
+			}
+			return new Response(subConfigInfo.inlineContent, {
+				status: 200,
+				headers: {
+					'Content-Type': 'text/plain; charset=UTF-8',
+					'Cache-Control': 'no-store',
+				},
+			});
+		}
 
 		if (!([mytoken, fakeToken, 访客订阅].includes(token) || url.pathname == ("/" + mytoken) || url.pathname.includes("/" + mytoken + "?"))) {
 			if (TG == 1 && url.pathname !== "/" && url.pathname !== "/favicon.ico") await sendMessage(`#异常访问 ${FileName}`, request.headers.get('CF-Connecting-IP'), `UA: ${userAgent}</tg-spoiler>\n域名: ${url.hostname}\n<tg-spoiler>入口: ${url.pathname + url.search}</tg-spoiler>`);
@@ -127,7 +143,7 @@ export default {
 				req_data += 请求订阅响应内容[0].join('\n');
 				订阅转换URL += "|" + 请求订阅响应内容[1];
 				if (订阅格式 == 'base64' && !isSubConverterRequest && 请求订阅响应内容[1].includes('://')) {
-					subConverterUrl = `${subProtocol}://${subConverter}/sub?target=mixed&url=${encodeURIComponent(请求订阅响应内容[1])}&insert=false&config=${encodeURIComponent(subConfig)}&emoji=true&list=false&tfo=false&scv=true&fdn=false&sort=false&new_name=true`;
+					subConverterUrl = `${subProtocol}://${subConverter}/sub?target=mixed&url=${encodeURIComponent(请求订阅响应内容[1])}&insert=false&config=${encodeURIComponent(subConfigInfo.converterUrl)}&emoji=true&list=false&tfo=false&scv=true&fdn=false&sort=false&new_name=true`;
 					try {
 						const subConverterResponse = await fetch(subConverterUrl, { headers: { 'User-Agent': 'v2rayN/CF-Workers-SUB  (https://github.com/cmliu/CF-Workers-SUB)' } });
 						if (subConverterResponse.ok) {
@@ -191,15 +207,15 @@ export default {
 			if (订阅格式 == 'base64' || token == fakeToken) {
 				return new Response(base64Data, { headers: responseHeaders });
 			} else if (订阅格式 == 'clash') {
-				subConverterUrl = `${subProtocol}://${subConverter}/sub?target=clash&url=${encodeURIComponent(订阅转换URL)}&insert=false&config=${encodeURIComponent(subConfig)}&emoji=true&list=false&tfo=false&scv=true&fdn=false&sort=false&new_name=true`;
+				subConverterUrl = `${subProtocol}://${subConverter}/sub?target=clash&url=${encodeURIComponent(订阅转换URL)}&insert=false&config=${encodeURIComponent(subConfigInfo.converterUrl)}&emoji=true&list=false&tfo=false&scv=true&fdn=false&sort=false&new_name=true`;
 			} else if (订阅格式 == 'singbox') {
-				subConverterUrl = `${subProtocol}://${subConverter}/sub?target=singbox&url=${encodeURIComponent(订阅转换URL)}&insert=false&config=${encodeURIComponent(subConfig)}&emoji=true&list=false&tfo=false&scv=true&fdn=false&sort=false&new_name=true`;
+				subConverterUrl = `${subProtocol}://${subConverter}/sub?target=singbox&url=${encodeURIComponent(订阅转换URL)}&insert=false&config=${encodeURIComponent(subConfigInfo.converterUrl)}&emoji=true&list=false&tfo=false&scv=true&fdn=false&sort=false&new_name=true`;
 			} else if (订阅格式 == 'surge') {
-				subConverterUrl = `${subProtocol}://${subConverter}/sub?target=surge&ver=4&url=${encodeURIComponent(订阅转换URL)}&insert=false&config=${encodeURIComponent(subConfig)}&emoji=true&list=false&tfo=false&scv=true&fdn=false&sort=false&new_name=true`;
+				subConverterUrl = `${subProtocol}://${subConverter}/sub?target=surge&ver=4&url=${encodeURIComponent(订阅转换URL)}&insert=false&config=${encodeURIComponent(subConfigInfo.converterUrl)}&emoji=true&list=false&tfo=false&scv=true&fdn=false&sort=false&new_name=true`;
 			} else if (订阅格式 == 'quanx') {
-				subConverterUrl = `${subProtocol}://${subConverter}/sub?target=quanx&url=${encodeURIComponent(订阅转换URL)}&insert=false&config=${encodeURIComponent(subConfig)}&emoji=true&list=false&tfo=false&scv=true&fdn=false&sort=false&udp=true`;
+				subConverterUrl = `${subProtocol}://${subConverter}/sub?target=quanx&url=${encodeURIComponent(订阅转换URL)}&insert=false&config=${encodeURIComponent(subConfigInfo.converterUrl)}&emoji=true&list=false&tfo=false&scv=true&fdn=false&sort=false&udp=true`;
 			} else if (订阅格式 == 'loon') {
-				subConverterUrl = `${subProtocol}://${subConverter}/sub?target=loon&url=${encodeURIComponent(订阅转换URL)}&insert=false&config=${encodeURIComponent(subConfig)}&emoji=true&list=false&tfo=false&scv=true&fdn=false&sort=false`;
+				subConverterUrl = `${subProtocol}://${subConverter}/sub?target=loon&url=${encodeURIComponent(订阅转换URL)}&insert=false&config=${encodeURIComponent(subConfigInfo.converterUrl)}&emoji=true&list=false&tfo=false&scv=true&fdn=false&sort=false`;
 			}
 			//console.log(订阅转换URL);
 			try {
@@ -285,6 +301,79 @@ function base64Decode(str) {
 	const bytes = new Uint8Array(atob(str).split('').map(c => c.charCodeAt(0)));
 	const decoder = new TextDecoder('utf-8');
 	return decoder.decode(bytes);
+}
+
+function resolveSubConfig(rawValue, origin, fakeToken) {
+	const value = (rawValue || '').trim();
+	if (!value) {
+		return {
+			converterUrl: '',
+			displayValue: '',
+			inlineContent: '',
+		};
+	}
+
+	if (isHttpUrl(value)) {
+		return {
+			converterUrl: value,
+			displayValue: value,
+			inlineContent: '',
+		};
+	}
+
+	const decodedInlineValue = tryDecodeInlineSubConfig(value);
+	const inlineValue = looksLikeIniConfig(decodedInlineValue) ? decodedInlineValue : (looksLikeIniConfig(value) ? value : '');
+	if (inlineValue) {
+		const normalizedInlineValue = normalizeIniContent(inlineValue);
+		const inlineUrl = `${origin}${INLINE_SUBCONFIG_PATH}?token=${fakeToken}`;
+		return {
+			converterUrl: inlineUrl,
+			displayValue: `[inline] ${inlineUrl}`,
+			inlineContent: normalizedInlineValue,
+		};
+	}
+
+	if (looksLikeLocalPath(value)) {
+		return {
+			converterUrl: value,
+			displayValue: `[本地路径无效] ${value}`,
+			inlineContent: '',
+		};
+	}
+
+	return {
+		converterUrl: value,
+		displayValue: value,
+		inlineContent: '',
+	};
+}
+
+function normalizeIniContent(content) {
+	return content.replace(/\r\n?/g, '\n').trim() + '\n';
+}
+
+function isHttpUrl(value) {
+	return /^https?:\/\//i.test(value);
+}
+
+function looksLikeIniConfig(value) {
+	return /^\s*\[custom\]/i.test(value) || /(^|\n)\s*ruleset=/i.test(value) || /(^|\n)\s*custom_proxy_group=/i.test(value) || /(^|\n)\s*clash_rule_base=/i.test(value);
+}
+
+function looksLikeLocalPath(value) {
+	return /^[A-Za-z]:[\\/]/.test(value) || value.startsWith('./') || value.startsWith('../') || value.startsWith('/');
+}
+
+function tryDecodeInlineSubConfig(value) {
+	if (!/^[A-Za-z0-9+/=\r\n]+$/.test(value) || value.includes('\n')) {
+		return '';
+	}
+
+	try {
+		return base64Decode(value);
+	} catch (error) {
+		return '';
+	}
 }
 
 async function MD5MD5(text) {
