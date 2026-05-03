@@ -18,7 +18,7 @@ https://cfxr.eu.org/getSub
 
 let urls = [];
 let subConverter = "SUBAPI.cmliussss.net"; //在线订阅转换后端，目前使用CM的订阅转换功能。支持自建psub 可自行搭建https://github.com/bulianglin/psub
-let subConfig = "https://raw.githubusercontent.com/cmliu/ACL4SSR/main/Clash/config/ACL4SSR_Online_MultiCountry.ini"; //订阅配置文件
+let subConfig = "https://raw.githubusercontent.com/dofastted/clash-rule-for-ai/main/chash_rules_for_ai.ini"; //订阅配置文件
 let subProtocol = 'https';
 const INLINE_SUBCONFIG_PATH = '/__subconfig__';
 
@@ -255,6 +255,7 @@ export default {
 					subConverterContent = mergeClashSubscription(subConverterContent, 第三方Clash配置);
 					subConverterContent = await clashFix(subConverterContent);
 					subConverterContent = await applyResidentialProxyRouting(subConverterContent);
+					subConverterContent = ensureResidentialAndRegionalGroups(subConverterContent);
 				}
 				// 只有非浏览器订阅才会返回SUBNAME
 				if (!userAgent.includes('mozilla')) responseHeaders["Content-Disposition"] = `attachment; filename*=utf-8''${encodeURIComponent(FileName)}`;
@@ -571,6 +572,152 @@ async function applyResidentialProxyRouting(content) {
 	return result.join('\n');
 }
 
+function ensureResidentialAndRegionalGroups(content) {
+	if (!content || !content.includes('\nproxy-groups:')) return content;
+
+	const proxyNames = extractProxyNames(content);
+	const existingGroups = extractProxyGroupNames(content);
+	const prependGroups = [];
+
+	if (!existingGroups.has('DE - 节点选择')) {
+		prependGroups.push(buildProxyGroupYaml('DE - 节点选择', 'select', matchProxyNames(proxyNames, /德国|德國|Germany|Deutschland|Frankfurt|法兰克福|法蘭克福|Berlin|柏林|(?:^|\s|[-_\[\(])(DE|DEU|GER)\d{0,3}(?:$|\s|[-_\]\)])|🇩🇪/i)));
+	}
+
+	if (!existingGroups.has('AU - 节点选择')) {
+		prependGroups.push(buildProxyGroupYaml('AU - 节点选择', 'select', matchProxyNames(proxyNames, /澳大利亚|澳洲|Australia|Sydney|悉尼|Melbourne|墨尔本|(?:^|\s|[-_\[\(])(AU|AUS)\d{0,3}(?:$|\s|[-_\]\)])|🇦🇺/i)));
+	}
+
+	if (!existingGroups.has('家宽前置节点')) {
+		prependGroups.push(buildProxyGroupYaml('家宽前置节点', 'select', [
+			'手动选择',
+			'HK - 自动选择',
+			'JP - 自动选择',
+			'US - 节点选择',
+			'DE - 节点选择',
+			'AU - 节点选择',
+		]));
+	}
+
+	const residentialNames = proxyNames.filter(name => /(\[家宽\]|家宽|住宅|residential|socks5?)/i.test(name));
+	if (!existingGroups.has('家宽节点')) {
+		prependGroups.push(buildProxyGroupYaml('家宽节点', 'select', residentialNames));
+	}
+
+	let nextContent = content;
+	if (prependGroups.length > 0) {
+		nextContent = nextContent.replace('\nproxy-groups:', `\nproxy-groups:\n${prependGroups.filter(Boolean).join('\n')}`);
+	}
+
+	nextContent = ensureGroupReferences(nextContent, '🤖 OpenAI', ['DE - 节点选择']);
+	return nextContent;
+}
+
+function extractProxyNames(content) {
+	const names = [];
+	const lines = content.includes('\r\n') ? content.split('\r\n') : content.split('\n');
+	let inProxies = false;
+
+	for (const line of lines) {
+		if (line.trim() === 'proxies:') {
+			inProxies = true;
+			continue;
+		}
+		if (inProxies && line.trim() === 'proxy-groups:') break;
+		if (!inProxies) continue;
+
+		const inlineName = extractFlowMapValue(line, 'name');
+		if (inlineName) {
+			names.push(inlineName);
+			continue;
+		}
+
+		const blockMatch = line.match(/^\s*-\s*name\s*:\s*(.+)$/i);
+		if (blockMatch) names.push(unquoteYamlValue(blockMatch[1]));
+	}
+
+	return [...new Set(names)];
+}
+
+function extractProxyGroupNames(content) {
+	const names = new Set();
+	const lines = content.includes('\r\n') ? content.split('\r\n') : content.split('\n');
+	let inGroups = false;
+
+	for (const line of lines) {
+		if (line.trim() === 'proxy-groups:') {
+			inGroups = true;
+			continue;
+		}
+		if (inGroups && line && !/^\s/.test(line) && /^[^#\s][^:]*:/.test(line)) break;
+		if (!inGroups) continue;
+
+		const match = line.match(/^\s*-\s*name\s*:\s*(.+)$/i);
+		if (match) names.add(unquoteYamlValue(match[1]));
+	}
+
+	return names;
+}
+
+function matchProxyNames(proxyNames, pattern) {
+	const matched = proxyNames.filter(name => pattern.test(name));
+	return matched.length > 0 ? matched : ['DIRECT'];
+}
+
+function buildProxyGroupYaml(name, type, proxies) {
+	const uniqueProxies = [...new Set(proxies.filter(Boolean))];
+	if (uniqueProxies.length === 0) uniqueProxies.push('DIRECT');
+	return [
+		`  - name: ${name}`,
+		`    type: ${type}`,
+		`    proxies:`,
+		...uniqueProxies.map(proxy => `      - ${proxy}`),
+	].join('\n');
+}
+
+function ensureGroupReferences(content, groupName, references) {
+	const lines = content.includes('\r\n') ? content.split('\r\n') : content.split('\n');
+	const result = [];
+
+	for (let index = 0; index < lines.length; index++) {
+		const line = lines[index];
+		const match = line.match(/^\s*-\s*name\s*:\s*(.+)$/i);
+		if (!match || unquoteYamlValue(match[1]) !== groupName) {
+			result.push(line);
+			continue;
+		}
+
+		const block = [line];
+		let cursor = index + 1;
+		while (cursor < lines.length && /^\s+/.test(lines[cursor])) {
+			block.push(lines[cursor]);
+			cursor++;
+		}
+
+		result.push(...insertProxyReferences(block, references));
+		index = cursor - 1;
+	}
+
+	return result.join('\n');
+}
+
+function insertProxyReferences(block, references) {
+	const existing = new Set(block.map(line => line.trim().replace(/^-\s*/, '')));
+	const result = [];
+	let inserted = false;
+
+	for (const line of block) {
+		result.push(line);
+		if (!inserted && line.trim() === 'proxies:') {
+			for (const reference of references) {
+				if (!existing.has(reference)) result.push(`      - ${reference}`);
+			}
+			inserted = true;
+		}
+	}
+
+	return result;
+}
+
 async function routeInlineResidentialProxy(line, countryCache) {
 	const server = extractFlowMapValue(line, 'server');
 	const countryCode = await lookupProxyCountryCode(server, countryCache);
@@ -620,6 +767,10 @@ function extractFlowMapValue(line, key) {
 	const match = line.match(new RegExp(`(?:^|[,\\s])${key}\\s*:\\s*("[^"]*"|'[^']*'|[^,}]+)`, 'i'));
 	if (!match) return '';
 	return match[1].trim().replace(/^["']|["']$/g, '');
+}
+
+function unquoteYamlValue(value) {
+	return (value || '').trim().replace(/^["']|["']$/g, '');
 }
 
 function replaceFlowMapValue(line, key, value) {
