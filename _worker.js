@@ -608,6 +608,10 @@ function ensureResidentialAndRegionalGroups(content) {
 		nextContent = nextContent.replace('\nproxy-groups:', `\nproxy-groups:\n${prependGroups.filter(Boolean).join('\n')}`);
 	}
 
+	if (residentialNames.length > 0) {
+		nextContent = ensureGroupReferences(nextContent, ['家宽节点'], residentialNames);
+	}
+
 	nextContent = ensureGroupReferences(nextContent, [
 		'🔮 全局策略',
 		'🧩 自定义扩展',
@@ -725,12 +729,28 @@ function insertProxyReferences(block, references) {
 	let inserted = false;
 
 	for (const line of block) {
+		if (!inserted && /^\s*proxies\s*:\s*\[\s*\]\s*$/i.test(line.trim())) {
+			result.push(line.replace(/proxies\s*:\s*\[\s*\]/i, 'proxies:'));
+			for (const reference of references) {
+				if (!existing.has(reference)) result.push(`      - ${reference}`);
+			}
+			inserted = true;
+			continue;
+		}
+
 		result.push(line);
 		if (!inserted && line.trim() === 'proxies:') {
 			for (const reference of references) {
 				if (!existing.has(reference)) result.push(`      - ${reference}`);
 			}
 			inserted = true;
+		}
+	}
+
+	if (!inserted && references.length > 0) {
+		result.push('    proxies:');
+		for (const reference of references) {
+			if (!existing.has(reference)) result.push(`      - ${reference}`);
 		}
 	}
 
@@ -783,7 +803,7 @@ async function routeBlockResidentialProxy(block, countryCache) {
 }
 
 function extractFlowMapValue(line, key) {
-	const match = line.match(new RegExp(`(?:^|[,\\s])${key}\\s*:\\s*("[^"]*"|'[^']*'|[^,}]+)`, 'i'));
+	const match = line.match(new RegExp(`(?:^|[,\\{\\s])${key}\\s*:\\s*("[^"]*"|'[^']*'|[^,}]+)`, 'i'));
 	if (!match) return '';
 	return match[1].trim().replace(/^["']|["']$/g, '');
 }

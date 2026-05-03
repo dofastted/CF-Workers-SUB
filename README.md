@@ -86,6 +86,9 @@
 
 ### 3. 添加你的节点或订阅链接：
    1. 绑定**变量名称**为`KV`的**KV命名空间**；
+      | 类型 | 名称 | 值 |
+      |-|-|-|
+      | KV 命名空间 | KV | 全汇聚订阅 |
    2. 访问 `https://sub.cmliussss.workers.dev/auto`，添加你的自建节点链接和机场订阅链接，确保每行一个链接，例如：
       ```
       vless://b7a392e2-4ef0-4496-90bc-1c37bb234904@cf.090227.xyz:443?encryption=none&security=tls&sni=edgetunnel-2z2.pages.dev&fp=random&type=ws&host=edgetunnel-2z2.pages.dev&path=%2F%3Fed%3D2048#%E5%8A%A0%E5%85%A5%E6%88%91%E7%9A%84%E9%A2%91%E9%81%93t.me%2FCMLiussss%E8%A7%A3%E9%94%81%E6%9B%B4%E5%A4%9A%E4%BC%98%E9%80%89%E8%8A%82%E7%82%B9
