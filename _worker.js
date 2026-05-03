@@ -135,7 +135,19 @@ export default {
 			await sendMessage(`#获取订阅 ${FileName}`, request.headers.get('CF-Connecting-IP'), `UA: ${userAgentHeader}</tg-spoiler>\n域名: ${url.hostname}\n<tg-spoiler>入口: ${url.pathname + url.search}</tg-spoiler>`);
 			const isSubConverterRequest = request.headers.get('subconverter-request') || request.headers.get('subconverter-version') || userAgent.includes('subconverter');
 			let 订阅格式 = 'base64';
-			if (!(userAgent.includes('null') || isSubConverterRequest || userAgent.includes('nekobox') || userAgent.includes(('CF-Workers-SUB').toLowerCase()))) {
+			if (url.searchParams.has('b64') || url.searchParams.has('base64')) {
+				订阅格式 = 'base64';
+			} else if (url.searchParams.has('clash')) {
+				订阅格式 = 'clash';
+			} else if (url.searchParams.has('singbox') || url.searchParams.has('sb')) {
+				订阅格式 = 'singbox';
+			} else if (url.searchParams.has('surge')) {
+				订阅格式 = 'surge';
+			} else if (url.searchParams.has('quanx')) {
+				订阅格式 = 'quanx';
+			} else if (url.searchParams.has('loon')) {
+				订阅格式 = 'loon';
+			} else if (!(userAgent.includes('null') || isSubConverterRequest || userAgent.includes('nekobox') || userAgent.includes(('CF-Workers-SUB').toLowerCase()))) {
 				if (userAgent.includes('sing-box') || userAgent.includes('singbox') || url.searchParams.has('sb') || url.searchParams.has('singbox')) {
 					订阅格式 = 'singbox';
 				} else if (userAgent.includes('surge') || url.searchParams.has('surge')) {
