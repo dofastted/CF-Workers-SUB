@@ -119,15 +119,19 @@ export default {
 			let 重新汇总所有链接 = await ADD(MainData + '\n' + urls.join('\n'));
 			let 自建节点 = "";
 			let 订阅链接 = "";
+			let 家宽原始节点 = "";
 			for (let x of 重新汇总所有链接) {
 				if (x.toLowerCase().startsWith('http')) {
 					订阅链接 += x + '\n';
+				} else if (isRawSocksProxyUrl(x)) {
+					家宽原始节点 += x + '\n';
 				} else {
 					自建节点 += x + '\n';
 				}
 			}
 			MainData = 自建节点;
 			urls = await ADD(订阅链接);
+			const 家宽Clash配置 = await buildResidentialClashConfig(await ADD(家宽原始节点));
 			await sendMessage(`#获取订阅 ${FileName}`, request.headers.get('CF-Connecting-IP'), `UA: ${userAgentHeader}</tg-spoiler>\n域名: ${url.hostname}\n<tg-spoiler>入口: ${url.pathname + url.search}</tg-spoiler>`);
 			const isSubConverterRequest = request.headers.get('subconverter-request') || request.headers.get('subconverter-version') || userAgent.includes('subconverter');
 			let 订阅格式 = 'base64';
@@ -160,12 +164,13 @@ export default {
 
 			const 订阅链接数组 = [...new Set(urls)].filter(item => item?.trim?.()); // 去重
 			let 第三方Clash配置 = [];
+			if (家宽Clash配置) 第三方Clash配置.push(家宽Clash配置);
 			if (订阅链接数组.length > 0) {
 				const 请求订阅响应内容 = await getSUB(订阅链接数组, request, 追加UA, userAgentHeader, `${url.origin}${订阅中转路径}`);
 				console.log(请求订阅响应内容);
 				req_data += 请求订阅响应内容[0].join('\n');
 				订阅转换URL += "|" + 请求订阅响应内容[1];
-				第三方Clash配置 = 请求订阅响应内容[2] || [];
+				第三方Clash配置.push(...(请求订阅响应内容[2] || []));
 				if (订阅格式 === 'base64' && !isSubConverterRequest && 请求订阅响应内容[1].includes('://')) {
 					subConverterUrl = `${subProtocol}://${subConverter}/sub?target=mixed&url=${encodeURIComponent(请求订阅响应内容[1])}&insert=false&config=${encodeURIComponent(subConfigInfo.converterUrl)}&emoji=true&list=false&tfo=false&scv=true&fdn=false&sort=false&new_name=true`;
 					try {
@@ -249,6 +254,7 @@ export default {
 				if (订阅格式 == 'clash') {
 					subConverterContent = mergeClashSubscription(subConverterContent, 第三方Clash配置);
 					subConverterContent = await clashFix(subConverterContent);
+					subConverterContent = await applyResidentialProxyRouting(subConverterContent);
 				}
 				// 只有非浏览器订阅才会返回SUBNAME
 				if (!userAgent.includes('mozilla')) responseHeaders["Content-Disposition"] = `attachment; filename*=utf-8''${encodeURIComponent(FileName)}`;
@@ -445,6 +451,219 @@ function mergeClashSubscription(mainConfig, thirdPartyClashConfigs = []) {
 		return `${mainConfig}\n${extraProxyContent}`;
 	}
 	return mainConfig;
+}
+
+async function buildResidentialClashConfig(rawProxyUrls) {
+	const socksUrls = rawProxyUrls.filter(isRawSocksProxyUrl);
+	if (socksUrls.length === 0) return '';
+
+	const countryCache = new Map();
+	const proxies = [];
+	for (const proxyUrl of socksUrls) {
+		const proxy = await parseRawSocksProxyUrl(proxyUrl, countryCache);
+		if (proxy) proxies.push(proxy);
+	}
+	if (proxies.length === 0) return '';
+
+	return `proxies:\n${proxies.map(proxyToClashLine).join('\n')}`;
+}
+
+function isRawSocksProxyUrl(value) {
+	return /^socks5?:\/\//i.test((value || '').trim());
+}
+
+async function parseRawSocksProxyUrl(rawUrl, countryCache) {
+	const value = rawUrl.trim();
+	const protocol = value.match(/^socks5?:\/\//i)?.[0]?.replace('://', '').toLowerCase() || 'socks5';
+	const payload = value.replace(/^socks5?:\/\//i, '');
+	let server = '';
+	let port = '';
+	let username = '';
+	let password = '';
+	let rawName = '';
+
+	if (payload.includes('@')) {
+		try {
+			const parsed = new URL(value);
+			server = parsed.hostname.replace(/^\[|\]$/g, '');
+			port = parsed.port;
+			username = decodeURIComponent(parsed.username || '');
+			password = decodeURIComponent(parsed.password || '');
+			rawName = decodeURIComponent(parsed.hash.replace(/^#/, ''));
+		} catch (error) {
+			return null;
+		}
+	} else {
+		const [mainPart, hashPart = ''] = payload.split('#');
+		const parts = mainPart.split(':');
+		server = parts[0] || '';
+		port = parts[1] || '';
+		username = parts[2] || '';
+		password = parts.slice(3).join(':');
+		rawName = decodeURIComponent(hashPart);
+	}
+
+	if (!server || !port) return null;
+	const countryCode = await lookupProxyCountryCode(server, countryCache);
+	const baseName = rawName || `${protocol.toUpperCase()} ${server}:${port}`;
+	return {
+		name: formatResidentialProxyName(baseName, countryCode),
+		server,
+		port,
+		type: protocol === 'socks' ? 'socks5' : protocol,
+		username,
+		password,
+	};
+}
+
+function proxyToClashLine(proxy) {
+	const fields = [
+		`name: "${escapeYamlDoubleQuoted(proxy.name)}"`,
+		`server: ${proxy.server}`,
+		`port: ${proxy.port}`,
+		`type: ${proxy.type}`,
+	];
+	if (proxy.username) fields.push(`username: "${escapeYamlDoubleQuoted(proxy.username)}"`);
+	if (proxy.password) fields.push(`password: "${escapeYamlDoubleQuoted(proxy.password)}"`);
+	fields.push(`dialer-proxy: "家宽前置节点"`);
+	return `  - {${fields.join(', ')}}`;
+}
+
+async function applyResidentialProxyRouting(content) {
+	if (!content || !/type:\s*socks5?/i.test(content)) {
+		return content;
+	}
+
+	const lines = content.includes('\r\n') ? content.split('\r\n') : content.split('\n');
+	const countryCache = new Map();
+	const result = [];
+
+	for (let index = 0; index < lines.length; index++) {
+		const line = lines[index];
+		const trimmed = line.trim();
+
+		if (/^-\s*\{.*\btype:\s*socks5?\b/i.test(trimmed)) {
+			result.push(await routeInlineResidentialProxy(line, countryCache));
+			continue;
+		}
+
+		if (/^-\s*name\s*:/i.test(trimmed)) {
+			const block = [line];
+			let cursor = index + 1;
+			while (cursor < lines.length && /^\s+/.test(lines[cursor])) {
+				block.push(lines[cursor]);
+				cursor++;
+			}
+
+			if (block.some(item => /^\s*type\s*:\s*socks5?\s*$/i.test(item.trim()) || /^\s*type\s*:\s*socks5?\s*(?:#.*)?$/i.test(item.trim()))) {
+				result.push(...await routeBlockResidentialProxy(block, countryCache));
+				index = cursor - 1;
+				continue;
+			}
+
+			result.push(line);
+			continue;
+		}
+
+		result.push(line);
+	}
+
+	return result.join('\n');
+}
+
+async function routeInlineResidentialProxy(line, countryCache) {
+	const server = extractFlowMapValue(line, 'server');
+	const countryCode = await lookupProxyCountryCode(server, countryCache);
+	const name = extractFlowMapValue(line, 'name');
+	let routedLine = line;
+
+	if (name && !/(\[家宽\]|家宽|住宅|residential)/i.test(name)) {
+		routedLine = replaceFlowMapValue(routedLine, 'name', formatResidentialProxyName(name, countryCode));
+	}
+
+	if (!/\bdialer-proxy\s*:/i.test(routedLine)) {
+		routedLine = routedLine.replace(/\}\s*$/, ', dialer-proxy: "家宽前置节点"}');
+	}
+
+	return routedLine;
+}
+
+async function routeBlockResidentialProxy(block, countryCache) {
+	const serverLine = block.find(line => /^\s*server\s*:/i.test(line.trim()));
+	const server = serverLine ? serverLine.split(/:\s*/).slice(1).join(':').trim().replace(/^["']|["']$/g, '') : '';
+	const countryCode = await lookupProxyCountryCode(server, countryCache);
+	const result = [];
+	let hasDialerProxy = false;
+
+	for (const line of block) {
+		if (/^\s*dialer-proxy\s*:/i.test(line.trim())) hasDialerProxy = true;
+		if (/^-\s*name\s*:/i.test(line.trim())) {
+			const prefix = line.match(/^(\s*-\s*name\s*:\s*)/i)?.[1] || '';
+			const name = line.slice(prefix.length).trim().replace(/^["']|["']$/g, '');
+			if (name && !/(\[家宽\]|家宽|住宅|residential)/i.test(name)) {
+				result.push(`${prefix}"${escapeYamlDoubleQuoted(formatResidentialProxyName(name, countryCode))}"`);
+				continue;
+			}
+		}
+		result.push(line);
+	}
+
+	if (!hasDialerProxy) {
+		const indent = block.find(line => /^\s+\S/.test(line))?.match(/^(\s+)/)?.[1] || '  ';
+		result.push(`${indent}dialer-proxy: 家宽前置节点`);
+	}
+
+	return result;
+}
+
+function extractFlowMapValue(line, key) {
+	const match = line.match(new RegExp(`(?:^|[,\\s])${key}\\s*:\\s*("[^"]*"|'[^']*'|[^,}]+)`, 'i'));
+	if (!match) return '';
+	return match[1].trim().replace(/^["']|["']$/g, '');
+}
+
+function replaceFlowMapValue(line, key, value) {
+	const replacement = `${key}: "${escapeYamlDoubleQuoted(value)}"`;
+	return line.replace(new RegExp(`(${key}\\s*:\\s*)("[^"]*"|'[^']*'|[^,}]+)`, 'i'), replacement);
+}
+
+function formatResidentialProxyName(name, countryCode) {
+	const code = countryCode ? `[${countryCode}]` : '';
+	return `[家宽]${code} ${name}`;
+}
+
+function escapeYamlDoubleQuoted(value) {
+	return value.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+}
+
+async function lookupProxyCountryCode(server, countryCache) {
+	const host = normalizeProxyHost(server);
+	if (!host) return '';
+	if (countryCache.has(host)) return countryCache.get(host);
+
+	try {
+		const response = await fetch(`http://ip-api.com/json/${encodeURIComponent(host)}?fields=status,countryCode,query`);
+		if (!response.ok) {
+			countryCache.set(host, '');
+			return '';
+		}
+		const data = await response.json();
+		const countryCode = data && data.status === 'success' && data.countryCode ? data.countryCode.toUpperCase() : '';
+		countryCache.set(host, countryCode);
+		return countryCode;
+	} catch (error) {
+		console.log(`家宽节点归属地探测失败: ${host}`);
+		countryCache.set(host, '');
+		return '';
+	}
+}
+
+function normalizeProxyHost(server) {
+	if (!server) return '';
+	let host = server.toString().trim().replace(/^["']|["']$/g, '');
+	if (!host) return '';
+	host = host.replace(/^\[|\]$/g, '');
+	return host;
 }
 
 async function MD5MD5(text) {
