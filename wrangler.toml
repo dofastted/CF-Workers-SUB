@@ -3,6 +3,6 @@ main = "_worker.js"
 compatibility_date = "2025-07-23"
 keep_vars = true
 
-[[kv_namespaces]]
-binding = "KV"			# Cloudflare Worker 绑定名称，控制台里填 KV
-id = "全汇聚订阅"	# KV 命名空间“全汇聚订阅”的 ID，不是中文名称本身
+#[[kv_namespaces]]
+#binding = "KV"			# Cloudflare Worker 绑定名称，控制台里填 KV
+#id = "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"	# KV 命名空间“全汇聚订阅”的 ID，不是中文名称本身
