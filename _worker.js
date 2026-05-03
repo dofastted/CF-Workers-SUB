@@ -608,7 +608,25 @@ function ensureResidentialAndRegionalGroups(content) {
 		nextContent = nextContent.replace('\nproxy-groups:', `\nproxy-groups:\n${prependGroups.filter(Boolean).join('\n')}`);
 	}
 
-	nextContent = ensureGroupReferences(nextContent, '🤖 OpenAI', ['DE - 节点选择']);
+	nextContent = ensureGroupReferences(nextContent, [
+		'🔮 全局策略',
+		'🧩 自定义扩展',
+		'🤖 OpenAI',
+		'🤖 Claude',
+		'🤖 Gemini',
+		'🤖 XAI',
+		'🤖 wechat',
+		'🎬 奈飞分组',
+		'📱 社交媒体',
+		'📺 YouTube',
+		'🎵 Spotify',
+		'🎮 游戏平台',
+		'🎮 Dota2',
+		'💻 微软服务',
+		'🍎 苹果服务',
+		'🐟 漏网之鱼',
+		'🔒 IP 伪装',
+	], ['DE - 节点选择']);
 	return nextContent;
 }
 
@@ -674,14 +692,15 @@ function buildProxyGroupYaml(name, type, proxies) {
 	].join('\n');
 }
 
-function ensureGroupReferences(content, groupName, references) {
+function ensureGroupReferences(content, groupNames, references) {
+	const targetGroups = new Set(groupNames);
 	const lines = content.includes('\r\n') ? content.split('\r\n') : content.split('\n');
 	const result = [];
 
 	for (let index = 0; index < lines.length; index++) {
 		const line = lines[index];
 		const match = line.match(/^\s*-\s*name\s*:\s*(.+)$/i);
-		if (!match || unquoteYamlValue(match[1]) !== groupName) {
+		if (!match || !targetGroups.has(unquoteYamlValue(match[1]))) {
 			result.push(line);
 			continue;
 		}
