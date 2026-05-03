@@ -134,45 +134,15 @@ export default {
 			const 家宽Clash配置 = await buildResidentialClashConfig(await ADD(家宽原始节点));
 			await sendMessage(`#获取订阅 ${FileName}`, request.headers.get('CF-Connecting-IP'), `UA: ${userAgentHeader}</tg-spoiler>\n域名: ${url.hostname}\n<tg-spoiler>入口: ${url.pathname + url.search}</tg-spoiler>`);
 			const isSubConverterRequest = request.headers.get('subconverter-request') || request.headers.get('subconverter-version') || userAgent.includes('subconverter');
-			let 订阅格式 = 'base64';
-			if (url.searchParams.has('b64') || url.searchParams.has('base64')) {
-				订阅格式 = 'base64';
-			} else if (url.searchParams.has('clash')) {
-				订阅格式 = 'clash';
-			} else if (url.searchParams.has('singbox') || url.searchParams.has('sb')) {
-				订阅格式 = 'singbox';
-			} else if (url.searchParams.has('surge')) {
-				订阅格式 = 'surge';
-			} else if (url.searchParams.has('quanx')) {
-				订阅格式 = 'quanx';
-			} else if (url.searchParams.has('loon')) {
-				订阅格式 = 'loon';
-			} else if (!(userAgent.includes('null') || isSubConverterRequest || userAgent.includes('nekobox') || userAgent.includes(('CF-Workers-SUB').toLowerCase()))) {
-				if (userAgent.includes('sing-box') || userAgent.includes('singbox') || url.searchParams.has('sb') || url.searchParams.has('singbox')) {
-					订阅格式 = 'singbox';
-				} else if (userAgent.includes('surge') || url.searchParams.has('surge')) {
-					订阅格式 = 'surge';
-				} else if (userAgent.includes('quantumult') || url.searchParams.has('quanx')) {
-					订阅格式 = 'quanx';
-				} else if (userAgent.includes('loon') || url.searchParams.has('loon')) {
-					订阅格式 = 'loon';
-				} else if (userAgent.includes('clash') || userAgent.includes('meta') || userAgent.includes('mihomo') || url.searchParams.has('clash')) {
-					订阅格式 = 'clash';
-				}
-			}
+			const 订阅请求 = resolveSubscriptionRequest(url, userAgent, isSubConverterRequest);
+			const 订阅格式 = 订阅请求.format;
 
 			let subConverterUrl;
 			let 订阅转换URL = `${url.origin}${订阅中转路径}`;
 			//console.log(订阅转换URL);
 			let req_data = MainData;
 
-			let 追加UA = 'v2rayn';
-			if (url.searchParams.has('b64') || url.searchParams.has('base64')) 订阅格式 = 'base64';
-			else if (url.searchParams.has('clash')) 追加UA = 'clash';
-			else if (url.searchParams.has('singbox')) 追加UA = 'singbox';
-			else if (url.searchParams.has('surge')) 追加UA = 'surge';
-			else if (url.searchParams.has('quanx')) 追加UA = 'Quantumult%20X';
-			else if (url.searchParams.has('loon')) 追加UA = 'Loon';
+			const 追加UA = 订阅请求.appendUA;
 
 			const 订阅链接数组 = [...new Set(urls)].filter(item => item?.trim?.()); // 去重
 			let 第三方Clash配置 = [];
@@ -261,7 +231,9 @@ export default {
 			//console.log(订阅转换URL);
 			try {
 				const subConverterResponse = await fetch(subConverterUrl, { headers: { 'User-Agent': userAgentHeader } });//订阅转换
-				if (!subConverterResponse.ok) return new Response(base64Data, { headers: responseHeaders });
+				if (!subConverterResponse.ok) {
+					return new Response(buildFormatFallbackResponse(订阅格式, base64Data, `订阅转换失败: ${subConverterResponse.status}`), { headers: responseHeaders });
+				}
 				let subConverterContent = await subConverterResponse.text();
 				if (订阅格式 == 'clash') {
 					subConverterContent = mergeClashSubscription(subConverterContent, 第三方Clash配置);
@@ -273,7 +245,7 @@ export default {
 				if (!userAgent.includes('mozilla')) responseHeaders["Content-Disposition"] = `attachment; filename*=utf-8''${encodeURIComponent(FileName)}`;
 				return new Response(subConverterContent, { headers: responseHeaders });
 			} catch (error) {
-				return new Response(base64Data, { headers: responseHeaders });
+				return new Response(buildFormatFallbackResponse(订阅格式, base64Data, `订阅转换异常: ${error && error.message ? error.message : error}`), { headers: responseHeaders });
 			}
 		}
 	}
@@ -347,6 +319,64 @@ function base64Decode(str) {
 	const bytes = new Uint8Array(atob(str).split('').map(c => c.charCodeAt(0)));
 	const decoder = new TextDecoder('utf-8');
 	return decoder.decode(bytes);
+}
+
+function resolveSubscriptionRequest(url, userAgent, isSubConverterRequest = false) {
+	if (url.searchParams.has('b64') || url.searchParams.has('base64')) {
+		return { format: 'base64', appendUA: 'v2rayn' };
+	}
+	if (url.searchParams.has('clash') || url.searchParams.has('meta') || url.searchParams.has('mihomo')) {
+		return { format: 'clash', appendUA: 'clash' };
+	}
+	if (url.searchParams.has('singbox') || url.searchParams.has('sb')) {
+		return { format: 'singbox', appendUA: 'singbox' };
+	}
+	if (url.searchParams.has('surge')) {
+		return { format: 'surge', appendUA: 'surge' };
+	}
+	if (url.searchParams.has('quanx')) {
+		return { format: 'quanx', appendUA: 'Quantumult%20X' };
+	}
+	if (url.searchParams.has('loon')) {
+		return { format: 'loon', appendUA: 'Loon' };
+	}
+
+	if (!userAgent || userAgent === 'null' || isSubConverterRequest || userAgent.includes('nekobox') || userAgent.includes(('CF-Workers-SUB').toLowerCase())) {
+		return { format: 'base64', appendUA: 'v2rayn' };
+	}
+
+	if (userAgent.includes('sing-box') || userAgent.includes('singbox')) {
+		return { format: 'singbox', appendUA: 'singbox' };
+	}
+	if (userAgent.includes('surge')) {
+		return { format: 'surge', appendUA: 'surge' };
+	}
+	if (userAgent.includes('quantumult')) {
+		return { format: 'quanx', appendUA: 'Quantumult%20X' };
+	}
+	if (userAgent.includes('loon')) {
+		return { format: 'loon', appendUA: 'Loon' };
+	}
+	if (userAgent.includes('clash') || userAgent.includes('mihomo') || userAgent.includes('stash') || userAgent.includes('meta')) {
+		return { format: 'clash', appendUA: 'clash' };
+	}
+
+	return { format: 'base64', appendUA: 'v2rayn' };
+}
+
+function buildFormatFallbackResponse(format, base64Data, reason = '') {
+	if (format !== 'clash') return base64Data;
+	return [
+		'proxies: []',
+		'proxy-groups:',
+		'  - name: 🔮 全局策略',
+		'    type: select',
+		'    proxies:',
+		'      - DIRECT',
+		'rules:',
+		'  - MATCH,DIRECT',
+		reason ? `# ${reason}` : '',
+	].filter(Boolean).join('\n') + '\n';
 }
 
 function resolveSubConfig(rawValue, origin, fakeToken) {
