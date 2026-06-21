@@ -13,22 +13,12 @@ let timestamp = 4102329600000;//2099-12-31
 
 //节点链接 + 订阅链接
 let MainData = `
-vless://ae14a26c-155c-4ac8-a098-5665a369135b@103.24.219.158:443?type=tcp&security=reality&pbk=hMIyk8-0dvxo76sQPMbx0EfNayrC0Nx38E_rzUvRp2U&fp=chrome&sni=www.microsoft.com&sid=8a14f72ce6a2b3e5&spx=%2F&flow=xtls-rprx-vision#HK-Reality-443---suyun-[hk]
-vless://f5692768-5288-43c6-8cef-341dde6344a5@154.17.239.145:443?security=reality&encryption=none&pbk=cFOObXBY1O7-LqMqwQ4qDbRdH104xyMb6XwrNHuCkho&headerType=none&fp=chrome&spx=%2F&type=tcp&flow=xtls-rprx-vision&sni=learn.microsoft.com#dmit[us]-600G
-vless://99188c81-23db-423c-a6a1-f8274afcd61b@dmit2.hellokkkks.com:56730?encryption=none&flow=xtls-rprx-vision&fp=chrome&pbk=idiarddyKlipzzyrMy1TCjyjjVZTAhGCHrOEuaoKqGY&security=reality&sid=9f91&sni=www.apple.com&spx=%2FaUIbEfbu9RgfmLz&type=tcp#dmit-2t-%5Bus%5D-el-494.15GB
-vless://96824df4-66f7-469d-b17b-d85f22b4ed5c@dmit2.hellokkkks.com:17143?encryption=none&fp=chrome&pbk=U1cLX_9LU2QC4Vsb6x6Gp2gM5Xs-1PA2umTxuVNu-zc&security=reality&sid=0be63fb2&sni=www.tesla.com&spx=%2F7MEcl2IOxr5pDsS&type=tcp#dmit-2t-%E5%AE%B6%E5%AE%BD%5Bus%5D-np7x9pp6
-vless://34a2b571-e9fb-4d00-95b7-239c3028ffd4@dmit3.hellokkkks.com:42899?alpn=h2%2Chttp%2F1.1&encryption=none&fp=chrome&security=tls&sni=&type=tcp#dmit-pro-tls-[us]
-vless://60967de1-80d6-4cad-a589-089fb51bfbad@dmit3.hellokkkks.com:55812?encryption=none&flow=xtls-rprx-vision&fp=chrome&pbk=GpBr89Iu0raHPKAeSkOSf_8nYdS_WvCAwbnfecBSLiU&security=reality&sid=8d6e695877b36363&sni=www.apple.com&spx=%2FXvwE9D3Fn6DqV4f&type=tcp#DMIT-PRO-[us]
-vless://4bd3a91d-d232-4114-b9b3-0f7580906984@dmit3v6.hellokkkks.com:17143?encryption=none&flow=xtls-rprx-vision&fp=chrome&pbk=MycxqAc9QieonkPSeTIA2zWyvr9sLgt0FuBNsUb4-AY&security=reality&sid=a5b9a5&sni=www.sony.com&spx=%2FOnhGqCXQ3i5d6Tz&type=tcp#dmit-pro-%E5%AE%B6%E5%AE%BD%5Bus%5D-e4cu7o8w-dmit3v6.hellokkkks.com-493.88GB%F0%9F%93%8A
-vless://8d3492c2-da5d-4215-9788-ab2822b7e990@host.hellokkkks.com:18899?encryption=none&flow=xtls-rprx-vision&fp=chrome&pbk=yTUtECEj3JnsypLocGeW1aOz-A319vlSoy1Q9bTEol4&security=reality&sid=0ac22caa693450&sni=www.oracle.com&spx=%2FzHuf8QXrWBiZOu0&type=tcp#host-us
-vless://6b5a117a-74ec-43bc-a321-d9f998ed164c@host.hellokkkks.com:44666?encryption=none&flow=xtls-rprx-vision-udp443&fp=chrome&pbk=ZjxVFqtTX7QLFc-b5224Xp4Hp8lQYo19z8r115r94Sc&security=reality&sid=72b5644558ffc3&sni=www.amazon.com&spx=%2FSiD4KD0Yn4Mt5i1&type=tcp#host-us-%E5%AE%B6%E5%AE%BD
-vless://7f9668a1-f65c-4274-a392-98e36da03831@38.146.29.115:26653?encryption=none&flow=xtls-rprx-vision&security=reality&sni=www.paypal.com&fp=chrome&pbk=KwIP45y2up5f_R2roCNd_dsvTuD97GtjCPzYg1hcuXU&type=tcp&headerType=none#US4-CN2%E5%AE%B6%E5%AE%BD%E4%B8%93%E7%BA%BF-600G
+https://cfxr.eu.org/getSub
 `;
 
 let urls = [];
 let subConverter = "SUBAPI.cmliussss.net"; //在线订阅转换后端，目前使用CM的订阅转换功能。支持自建psub 可自行搭建https://github.com/bulianglin/psub
-const DEFAULT_SUBCONFIG_URL = "https://raw.githubusercontent.com/dofastted/clash-rule-for-ai/main/chash_rules_for_ai.ini";
-let subConfig = DEFAULT_SUBCONFIG_URL; //订阅配置文件
+let subConfig = "https://raw.githubusercontent.com/dofastted/clash-rule-for-ai/main/chash_rules_for_ai.ini"; //订阅配置文件
 let subProtocol = 'https';
 const INLINE_SUBCONFIG_PATH = '/__subconfig__';
 
@@ -42,9 +32,13 @@ export default {
 		BotToken = env.TGTOKEN || BotToken;
 		ChatID = env.TGID || ChatID;
 		TG = env.TG || TG;
-		const rawSubConverter = env.SUBAPI || subConverter;
-		const requestSubProtocol = rawSubConverter.includes("http://") ? 'http' : 'https';
-		const requestSubConverter = rawSubConverter.split("//")[1] || rawSubConverter;
+		subConverter = env.SUBAPI || subConverter;
+		if (subConverter.includes("http://")) {
+			subConverter = subConverter.split("//")[1];
+			subProtocol = 'http';
+		} else {
+			subConverter = subConverter.split("//")[1] || subConverter;
+		}
 		const rawSubConfig = env.SUBCONFIG || subConfig;
 		FileName = env.SUBNAME || FileName;
 
@@ -53,7 +47,7 @@ export default {
 		const timeTemp = Math.ceil(currentDate.getTime() / 1000);
 		const fakeToken = await MD5MD5(`${mytoken}${timeTemp}`);
 		const subConfigInfo = resolveSubConfig(rawSubConfig, url.origin, fakeToken);
-		const subConfigDisplay = subConfigInfo.displayValue;
+		subConfig = subConfigInfo.displayValue;
 		guestToken = env.GUESTTOKEN || env.GUEST || guestToken;
 		if (!guestToken) guestToken = await MD5MD5(mytoken);
 		const 访客订阅 = guestToken;
@@ -160,7 +154,7 @@ export default {
 				订阅转换URL += "|" + 请求订阅响应内容[1];
 				第三方Clash配置.push(...(请求订阅响应内容[2] || []));
 				if (订阅格式 === 'base64' && !isSubConverterRequest && 请求订阅响应内容[1].includes('://')) {
-					subConverterUrl = `${requestSubProtocol}://${requestSubConverter}/sub?target=mixed&url=${encodeURIComponent(请求订阅响应内容[1])}&insert=false&config=${encodeURIComponent(subConfigInfo.converterUrl)}&emoji=true&list=false&tfo=false&scv=true&fdn=false&sort=false&new_name=true`;
+					subConverterUrl = `${subProtocol}://${subConverter}/sub?target=mixed&url=${encodeURIComponent(请求订阅响应内容[1])}&insert=false&config=${encodeURIComponent(subConfigInfo.converterUrl)}&emoji=true&list=false&tfo=false&scv=true&fdn=false&sort=false&new_name=true`;
 					try {
 						const subConverterResponse = await fetch(subConverterUrl, { headers: { 'User-Agent': 'v2rayN/CF-Workers-SUB  (https://github.com/cmliu/CF-Workers-SUB)' } });
 						if (subConverterResponse.ok) {
@@ -224,15 +218,15 @@ export default {
 			if (订阅格式 == 'base64' || token == fakeToken) {
 				return new Response(base64Data, { headers: responseHeaders });
 			} else if (订阅格式 == 'clash') {
-				subConverterUrl = `${requestSubProtocol}://${requestSubConverter}/sub?target=clash&url=${encodeURIComponent(订阅转换URL)}&insert=false&config=${encodeURIComponent(subConfigInfo.converterUrl)}&emoji=true&list=false&tfo=false&scv=true&fdn=false&sort=false&new_name=true`;
+				subConverterUrl = `${subProtocol}://${subConverter}/sub?target=clash&url=${encodeURIComponent(订阅转换URL)}&insert=false&config=${encodeURIComponent(subConfigInfo.converterUrl)}&emoji=true&list=false&tfo=false&scv=true&fdn=false&sort=false&new_name=true`;
 			} else if (订阅格式 == 'singbox') {
-				subConverterUrl = `${requestSubProtocol}://${requestSubConverter}/sub?target=singbox&url=${encodeURIComponent(订阅转换URL)}&insert=false&config=${encodeURIComponent(subConfigInfo.converterUrl)}&emoji=true&list=false&tfo=false&scv=true&fdn=false&sort=false&new_name=true`;
+				subConverterUrl = `${subProtocol}://${subConverter}/sub?target=singbox&url=${encodeURIComponent(订阅转换URL)}&insert=false&config=${encodeURIComponent(subConfigInfo.converterUrl)}&emoji=true&list=false&tfo=false&scv=true&fdn=false&sort=false&new_name=true`;
 			} else if (订阅格式 == 'surge') {
-				subConverterUrl = `${requestSubProtocol}://${requestSubConverter}/sub?target=surge&ver=4&url=${encodeURIComponent(订阅转换URL)}&insert=false&config=${encodeURIComponent(subConfigInfo.converterUrl)}&emoji=true&list=false&tfo=false&scv=true&fdn=false&sort=false&new_name=true`;
+				subConverterUrl = `${subProtocol}://${subConverter}/sub?target=surge&ver=4&url=${encodeURIComponent(订阅转换URL)}&insert=false&config=${encodeURIComponent(subConfigInfo.converterUrl)}&emoji=true&list=false&tfo=false&scv=true&fdn=false&sort=false&new_name=true`;
 			} else if (订阅格式 == 'quanx') {
-				subConverterUrl = `${requestSubProtocol}://${requestSubConverter}/sub?target=quanx&url=${encodeURIComponent(订阅转换URL)}&insert=false&config=${encodeURIComponent(subConfigInfo.converterUrl)}&emoji=true&list=false&tfo=false&scv=true&fdn=false&sort=false&udp=true`;
+				subConverterUrl = `${subProtocol}://${subConverter}/sub?target=quanx&url=${encodeURIComponent(订阅转换URL)}&insert=false&config=${encodeURIComponent(subConfigInfo.converterUrl)}&emoji=true&list=false&tfo=false&scv=true&fdn=false&sort=false&udp=true`;
 			} else if (订阅格式 == 'loon') {
-				subConverterUrl = `${requestSubProtocol}://${requestSubConverter}/sub?target=loon&url=${encodeURIComponent(订阅转换URL)}&insert=false&config=${encodeURIComponent(subConfigInfo.converterUrl)}&emoji=true&list=false&tfo=false&scv=true&fdn=false&sort=false`;
+				subConverterUrl = `${subProtocol}://${subConverter}/sub?target=loon&url=${encodeURIComponent(订阅转换URL)}&insert=false&config=${encodeURIComponent(subConfigInfo.converterUrl)}&emoji=true&list=false&tfo=false&scv=true&fdn=false&sort=false`;
 			}
 			//console.log(订阅转换URL);
 			try {
@@ -417,8 +411,8 @@ function resolveSubConfig(rawValue, origin, fakeToken) {
 
 	if (looksLikeLocalPath(value)) {
 		return {
-			converterUrl: DEFAULT_SUBCONFIG_URL,
-			displayValue: `[本地路径已回退] ${DEFAULT_SUBCONFIG_URL}`,
+			converterUrl: value,
+			displayValue: `[本地路径无效] ${value}`,
 			inlineContent: '',
 		};
 	}
@@ -627,18 +621,22 @@ function ensureResidentialAndRegionalGroups(content) {
 	const existingGroups = extractProxyGroupNames(content);
 	const prependGroups = [];
 
-	if (!existingGroups.has('DE - 手动选择')) {
-		prependGroups.push(buildProxyGroupYaml('DE - 手动选择', 'select', matchProxyNames(proxyNames, /德国|德國|Germany|Deutschland|Frankfurt|法兰克福|法蘭克福|Berlin|柏林|(?:^|\s|[-_\[\(])(DE|DEU|GER)\d{0,3}(?:$|\s|[-_\]\)])|🇩🇪/i)));
+	if (!existingGroups.has('DE - 节点选择')) {
+		prependGroups.push(buildProxyGroupYaml('DE - 节点选择', 'select', matchProxyNames(proxyNames, /德国|德國|Germany|Deutschland|Frankfurt|法兰克福|法蘭克福|Berlin|柏林|(?:^|\s|[-_\[\(])(DE|DEU|GER)\d{0,3}(?:$|\s|[-_\]\)])|🇩🇪/i)));
+	}
+
+	if (!existingGroups.has('AU - 节点选择')) {
+		prependGroups.push(buildProxyGroupYaml('AU - 节点选择', 'select', matchProxyNames(proxyNames, /澳大利亚|澳洲|Australia|Sydney|悉尼|Melbourne|墨尔本|(?:^|\s|[-_\[\(])(AU|AUS)\d{0,3}(?:$|\s|[-_\]\)])|🇦🇺/i)));
 	}
 
 	if (!existingGroups.has('家宽前置节点')) {
 		prependGroups.push(buildProxyGroupYaml('家宽前置节点', 'select', [
 			'手动选择',
-			'HK - 手动选择',
-			'JP - 手动选择',
-			'US - 手动选择',
-			'DE - 手动选择',
-			'AU - 手动选择',
+			'HK - 自动选择',
+			'JP - 自动选择',
+			'US - 节点选择',
+			'DE - 节点选择',
+			'AU - 节点选择',
 		]));
 	}
 
@@ -674,7 +672,7 @@ function ensureResidentialAndRegionalGroups(content) {
 		'🍎 苹果服务',
 		'🐟 漏网之鱼',
 		'🔒 IP 伪装',
-	], ['DE - 手动选择']);
+	], ['DE - 节点选择']);
 	return nextContent;
 }
 
@@ -1286,8 +1284,8 @@ async function KV(request, env, txt = 'ADD.txt', guest) {
 					################################################################<br>
 					订阅转换配置<br>
 					---------------------------------------------------------------<br>
-					SUBAPI（订阅转换后端）: <strong>${requestSubProtocol}://${requestSubConverter}</strong><br>
-					SUBCONFIG（订阅转换配置文件）: <strong>${subConfigDisplay}</strong><br>
+					SUBAPI（订阅转换后端）: <strong>${subProtocol}://${subConverter}</strong><br>
+					SUBCONFIG（订阅转换配置文件）: <strong>${subConfig}</strong><br>
 					---------------------------------------------------------------<br>
 					################################################################<br>
 					${FileName} 汇聚订阅编辑: 
