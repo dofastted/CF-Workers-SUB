@@ -238,6 +238,7 @@ export default {
 				if (订阅格式 == 'clash') {
 					subConverterContent = mergeClashSubscription(subConverterContent, 第三方Clash配置);
 					subConverterContent = await clashFix(subConverterContent);
+					subConverterContent = normalizeLegacyProxyGroupNames(subConverterContent);
 				}
 				// 只有非浏览器订阅才会返回SUBNAME
 				if (!userAgent.includes('mozilla')) responseHeaders["Content-Disposition"] = `attachment; filename*=utf-8''${encodeURIComponent(FileName)}`;
@@ -462,6 +463,69 @@ function normalizeSubscriptionConfigUrl(configUrl) {
 		'https://raw.githubusercontent.com/$1/$2/$3/$4'
 	);
 	return normalized;
+}
+
+function normalizeLegacyProxyGroupNames(content) {
+	if (!content) return content;
+	const removableGroups = new Set([
+		'AU - 自动选择',
+		'AU - 节点选择',
+		'DE - 节点选择',
+		'家宽前置节点',
+		'家宽节点',
+		'🛰️ 自动选择',
+	]);
+	const replacements = [
+		[/HK\s*-\s*自动选择/g, 'HK手动选择'],
+		[/TW\s*-\s*自动选择/g, 'TW手动选择'],
+		[/SG\s*-\s*自动选择/g, 'SG手动选择'],
+		[/JP\s*-\s*自动选择/g, 'JP手动选择'],
+		[/US\s*-\s*自动选择/g, 'US手动选择'],
+		[/US\s*-\s*节点选择/g, 'US节点选择'],
+		[/KR\s*-\s*自动选择/g, 'KR手动选择'],
+		[/AU\s*-\s*(自动选择|节点选择)/g, 'DIRECT'],
+		[/DE\s*-\s*节点选择/g, 'DIRECT'],
+		[/家宽前置节点|家宽节点/g, 'DIRECT'],
+		[/🛰️\s*自动选择/g, '手动选择'],
+	];
+	let nextContent = removeLegacyProxyGroups(content, removableGroups);
+	for (const [pattern, replacement] of replacements) {
+		nextContent = nextContent.replace(pattern, replacement);
+	}
+	return nextContent;
+}
+
+function removeLegacyProxyGroups(content, removableGroups) {
+	const lines = content.includes('\r\n') ? content.split('\r\n') : content.split('\n');
+	const result = [];
+	let inProxyGroups = false;
+	let skipping = false;
+
+	for (const line of lines) {
+		if (line.trim() === 'proxy-groups:') {
+			inProxyGroups = true;
+			skipping = false;
+			result.push(line);
+			continue;
+		}
+
+		if (inProxyGroups && line && !/^\s/.test(line) && /^[^#\s][^:]*:/.test(line)) {
+			inProxyGroups = false;
+			skipping = false;
+		}
+
+		const groupMatch = inProxyGroups ? line.match(/^\s*-\s*name\s*:\s*(.+)$/i) : null;
+		if (groupMatch) {
+			const groupName = unquoteYamlValue(groupMatch[1]);
+			skipping = removableGroups.has(groupName);
+			if (skipping) continue;
+		}
+
+		if (skipping) continue;
+		result.push(line);
+	}
+
+	return result.join('\n');
 }
 
 function extractClashProxySection(content) {
