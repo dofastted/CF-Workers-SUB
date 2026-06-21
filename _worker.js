@@ -238,8 +238,6 @@ export default {
 				if (订阅格式 == 'clash') {
 					subConverterContent = mergeClashSubscription(subConverterContent, 第三方Clash配置);
 					subConverterContent = await clashFix(subConverterContent);
-					subConverterContent = await applyResidentialProxyRouting(subConverterContent);
-					subConverterContent = ensureResidentialAndRegionalGroups(subConverterContent);
 				}
 				// 只有非浏览器订阅才会返回SUBNAME
 				if (!userAgent.includes('mozilla')) responseHeaders["Content-Disposition"] = `attachment; filename*=utf-8''${encodeURIComponent(FileName)}`;
@@ -568,7 +566,6 @@ function proxyToClashLine(proxy) {
 	];
 	if (proxy.username) fields.push(`username: "${escapeYamlDoubleQuoted(proxy.username)}"`);
 	if (proxy.password) fields.push(`password: "${escapeYamlDoubleQuoted(proxy.password)}"`);
-	fields.push(`dialer-proxy: "家宽前置节点"`);
 	return `  - {${fields.join(', ')}}`;
 }
 
