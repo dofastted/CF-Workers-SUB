@@ -462,6 +462,10 @@ function normalizeSubscriptionConfigUrl(configUrl) {
 		/^https:\/\/github\.com\/([^/]+)\/([^/]+)\/blob\/([^/]+)\/(.+)$/i,
 		'https://raw.githubusercontent.com/$1/$2/$3/$4'
 	);
+	normalized = normalized.replace(
+		/^https:\/\/raw\.githubusercontent\.com\/dofastted\/clash-rule-for-ai\/main\/chash_rules_for_ai\.ini$/i,
+		'https://raw.githubusercontent.com/dofastted/clash-rule-for-ai/189d3b5/chash_rules_for_ai.ini'
+	);
 	return normalized;
 }
 
