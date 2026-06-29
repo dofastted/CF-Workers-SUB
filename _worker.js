@@ -646,7 +646,28 @@ function mergeClashSubscription(mainConfig, thirdPartyClashConfigs = []) {
 	}
 
 	const extraProxyNames = extractProxyNames(`proxies:\n${extraProxyContent}\nproxy-groups:`);
-	return ensureGroupReferences(mergedConfig, ['手动选择'], extraProxyNames);
+	mergedConfig = ensureGroupReferences(mergedConfig, ['手动选择'], extraProxyNames);
+	return ensureRegionalGroupReferences(mergedConfig, extraProxyNames);
+}
+
+function ensureRegionalGroupReferences(content, proxyNames) {
+	const regionalGroups = [
+		{ groups: ['HK手动选择', 'HK - 自动选择'], pattern: /香港|Hong\s?Kong|Hongkong|(?:^|\s|[-_\[\(])HKG?\d{0,3}(?:$|\s|[-_\]\)])|🇭🇰/i },
+		{ groups: ['TW手动选择', 'TW - 自动选择'], pattern: /台湾|台灣|Taiwan|台北|Taipei|(?:^|\s|[-_\[\(])TW\d{0,3}(?:$|\s|[-_\]\)])|(?:^|\s|[-_\[\(])TPE\d{0,3}(?:$|\s|[-_\]\)])|🇹🇼/i },
+		{ groups: ['SG手动选择', 'SG - 自动选择'], pattern: /新加坡|狮城|Singapore|(?:^|\s|[-_\[\(])SG\d{0,3}(?:$|\s|[-_\]\)])|(?:^|\s|[-_\[\(])SGP\d{0,3}(?:$|\s|[-_\]\)])|🇸🇬/i },
+		{ groups: ['JP手动选择', 'JP - 自动选择'], pattern: /日本|Japan|东京|Tokyo|大阪|Osaka|(?:^|\s|[-_\[\(])JP\d{0,3}(?:$|\s|[-_\]\)])|🇯🇵/i },
+		{ groups: ['US手动选择', 'US节点选择', 'US - 自动选择', 'US - 节点选择'], pattern: /美国|United\s?States|America|洛杉矶|Los\s?Angeles|圣何塞|San\s?Jose|西雅图|Seattle|达拉斯|Dallas|纽约|New\s?York|(?:^|\s|[-_\[\(])(USA|US)\d{0,3}(?:$|\s|[-_\]\)])|🇺🇸|🇺🇲/i },
+		{ groups: ['KR手动选择', 'KR - 自动选择'], pattern: /韩国|Korea|首尔|Seoul|(?:^|\s|[-_\[\(])KR\d{0,3}(?:$|\s|[-_\]\)])|🇰🇷/i },
+		{ groups: ['AU - 自动选择', 'AU - 节点选择'], pattern: /澳大利亚|澳洲|Australia|Sydney|悉尼|Melbourne|墨尔本|(?:^|\s|[-_\[\(])AU\d{0,3}(?:$|\s|[-_\]\)])|(?:^|\s|[-_\[\(])AUS\d{0,3}(?:$|\s|[-_\]\)])|🇦🇺/i },
+		{ groups: ['DE - 节点选择'], pattern: /德国|德國|Germany|Deutschland|Frankfurt|法兰克福|法蘭克福|Berlin|柏林|(?:^|\s|[-_\[\(])(DE|DEU|GER)\d{0,3}(?:$|\s|[-_\]\)])|🇩🇪/i },
+	];
+
+	let nextContent = content;
+	for (const { groups, pattern } of regionalGroups) {
+		const regionalProxyNames = proxyNames.filter(name => pattern.test(name));
+		if (regionalProxyNames.length > 0) nextContent = ensureGroupReferences(nextContent, groups, regionalProxyNames);
+	}
+	return nextContent;
 }
 
 async function buildResidentialClashConfig(rawProxyUrls) {
@@ -919,33 +940,42 @@ function ensureGroupReferences(content, groupNames, references) {
 
 function insertProxyReferences(block, references) {
 	const existing = new Set(block.map(line => line.trim()).filter(line => line.startsWith('-')).map(line => unquoteYamlValue(line.replace(/^-\s*/, ''))));
+	const pendingReferences = references.filter(reference => !existing.has(reference));
 	const result = [];
+	let foundProxies = false;
 	let inserted = false;
+	let inProxyList = false;
+
+	const appendPendingReferences = () => {
+		if (inserted) return;
+		for (const reference of pendingReferences) result.push(`      - ${formatProxyReference(reference)}`);
+		inserted = true;
+	};
 
 	for (const line of block) {
 		if (!inserted && /^\s*proxies\s*:\s*\[\s*\]\s*$/i.test(line.trim())) {
 			result.push(line.replace(/proxies\s*:\s*\[\s*\]/i, 'proxies:'));
-			for (const reference of references) {
-				if (!existing.has(reference)) result.push(`      - ${formatProxyReference(reference)}`);
-			}
-			inserted = true;
+			foundProxies = true;
+			appendPendingReferences();
 			continue;
 		}
 
+		if (inProxyList && !/^\s{6}-\s+/.test(line)) {
+			appendPendingReferences();
+			inProxyList = false;
+		}
+
 		result.push(line);
-		if (!inserted && line.trim() === 'proxies:') {
-			for (const reference of references) {
-				if (!existing.has(reference)) result.push(`      - ${formatProxyReference(reference)}`);
-			}
-			inserted = true;
+		if (line.trim() === 'proxies:') {
+			foundProxies = true;
+			inProxyList = true;
 		}
 	}
 
-	if (!inserted && references.length > 0) {
+	if (inProxyList) appendPendingReferences();
+	if (!foundProxies && pendingReferences.length > 0) {
 		result.push('    proxies:');
-		for (const reference of references) {
-			if (!existing.has(reference)) result.push(`      - ${formatProxyReference(reference)}`);
-		}
+		appendPendingReferences();
 	}
 
 	return result;
