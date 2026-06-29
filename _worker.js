@@ -844,7 +844,7 @@ function buildProxyGroupYaml(name, type, proxies) {
 		`  - name: ${name}`,
 		`    type: ${type}`,
 		`    proxies:`,
-		...uniqueProxies.map(proxy => `      - ${proxy}`),
+		...uniqueProxies.map(proxy => `      - ${formatProxyReference(proxy)}`),
 	].join('\n');
 }
 
@@ -876,7 +876,7 @@ function ensureGroupReferences(content, groupNames, references) {
 }
 
 function insertProxyReferences(block, references) {
-	const existing = new Set(block.map(line => line.trim().replace(/^-\s*/, '')));
+	const existing = new Set(block.map(line => line.trim()).filter(line => line.startsWith('-')).map(line => unquoteYamlValue(line.replace(/^-\s*/, ''))));
 	const result = [];
 	let inserted = false;
 
@@ -884,7 +884,7 @@ function insertProxyReferences(block, references) {
 		if (!inserted && /^\s*proxies\s*:\s*\[\s*\]\s*$/i.test(line.trim())) {
 			result.push(line.replace(/proxies\s*:\s*\[\s*\]/i, 'proxies:'));
 			for (const reference of references) {
-				if (!existing.has(reference)) result.push(`      - ${reference}`);
+				if (!existing.has(reference)) result.push(`      - ${formatProxyReference(reference)}`);
 			}
 			inserted = true;
 			continue;
@@ -893,7 +893,7 @@ function insertProxyReferences(block, references) {
 		result.push(line);
 		if (!inserted && line.trim() === 'proxies:') {
 			for (const reference of references) {
-				if (!existing.has(reference)) result.push(`      - ${reference}`);
+				if (!existing.has(reference)) result.push(`      - ${formatProxyReference(reference)}`);
 			}
 			inserted = true;
 		}
@@ -902,11 +902,17 @@ function insertProxyReferences(block, references) {
 	if (!inserted && references.length > 0) {
 		result.push('    proxies:');
 		for (const reference of references) {
-			if (!existing.has(reference)) result.push(`      - ${reference}`);
+			if (!existing.has(reference)) result.push(`      - ${formatProxyReference(reference)}`);
 		}
 	}
 
 	return result;
+}
+
+function formatProxyReference(reference) {
+	const value = (reference || '').toString();
+	if (/^(DIRECT|REJECT|REJECT-DROP|PASS)$/i.test(value)) return value;
+	return `"${escapeYamlDoubleQuoted(value)}"`;
 }
 
 async function routeInlineResidentialProxy(line, countryCache) {
