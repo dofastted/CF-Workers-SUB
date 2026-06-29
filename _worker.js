@@ -18,7 +18,7 @@ https://cfxr.eu.org/getSub
 
 let urls = [];
 let subConverter = "SUBAPI.cmliussss.net"; //在线订阅转换后端，目前使用CM的订阅转换功能。支持自建psub 可自行搭建https://github.com/bulianglin/psub
-let subConfig = "https://raw.githubusercontent.com/dofastted/clash-rule-for-ai/189d3b5/chash_rules_for_ai.ini"; //订阅配置文件
+let subConfig = "https://raw.githubusercontent.com/dofastted/clash-rule-for-ai/main/chash_rules_for_ai.ini"; //订阅配置文件
 let subProtocol = 'https';
 const INLINE_SUBCONFIG_PATH = '/__subconfig__';
 
@@ -462,10 +462,6 @@ function normalizeSubscriptionConfigUrl(configUrl) {
 		/^https:\/\/github\.com\/([^/]+)\/([^/]+)\/blob\/([^/]+)\/(.+)$/i,
 		'https://raw.githubusercontent.com/$1/$2/$3/$4'
 	);
-	normalized = normalized.replace(
-		/^https:\/\/raw\.githubusercontent\.com\/dofastted\/clash-rule-for-ai\/main\/chash_rules_for_ai\.ini$/i,
-		'https://raw.githubusercontent.com/dofastted/clash-rule-for-ai/189d3b5/chash_rules_for_ai.ini'
-	);
 	return normalized;
 }
 
@@ -546,20 +542,69 @@ function extractClashProxySection(content) {
 
 	while (proxyLines.length > 0 && !proxyLines[0].trim()) proxyLines.shift();
 	while (proxyLines.length > 0 && !proxyLines[proxyLines.length - 1].trim()) proxyLines.pop();
-	return proxyLines.join('\n');
+	return normalizeClashProxyLines(proxyLines).join('\n');
+}
+
+function normalizeClashProxyLines(proxyLines) {
+	const result = [];
+	let fields = [];
+	let inBlockProxy = false;
+	const flush = () => {
+		if (fields.length > 0) result.push(`  - {${fields.map(([key, value]) => `${key}: ${formatClashFlowValue(value)}`).join(', ')}}`);
+		fields = [];
+		inBlockProxy = false;
+	};
+
+	for (const line of proxyLines) {
+		const trimmed = line.trim();
+		if (!trimmed || trimmed.startsWith('#')) continue;
+		if (/^-\s*\{/.test(trimmed)) {
+			flush();
+			result.push(`  ${trimmed}`);
+			continue;
+		}
+		if (/^-\s*$/.test(trimmed)) {
+			flush();
+			inBlockProxy = true;
+			continue;
+		}
+
+		const firstField = trimmed.match(/^-\s*([A-Za-z0-9_-]+)\s*:\s*(.*)$/);
+		if (firstField) {
+			flush();
+			fields.push([firstField[1], firstField[2]]);
+			inBlockProxy = true;
+			continue;
+		}
+
+		const field = trimmed.match(/^([A-Za-z0-9_-]+)\s*:\s*(.*)$/);
+		if (field && inBlockProxy) fields.push([field[1], field[2]]);
+	}
+	flush();
+	return result;
+}
+
+function formatClashFlowValue(value) {
+	const rawValue = (value || '').trim();
+	if (/^(true|false|null)$/i.test(rawValue) || /^-?\d+(?:\.\d+)?$/.test(rawValue)) return rawValue;
+	return `"${escapeYamlDoubleQuoted(unquoteYamlValue(rawValue))}"`;
 }
 
 function mergeClashSubscription(mainConfig, thirdPartyClashConfigs = []) {
 	const extraProxyContent = [...new Set(thirdPartyClashConfigs.map(extractClashProxySection).filter(Boolean))].join('\n');
 	if (!extraProxyContent) return mainConfig;
 
-	if (mainConfig.includes('\nproxy-groups:')) {
-		return mainConfig.replace('\nproxy-groups:', `\n${extraProxyContent}\nproxy-groups:`);
+	let mergedConfig = mainConfig;
+	if (/(^|\n)proxies\s*:\s*\[\s*\]\s*\n/.test(mergedConfig)) {
+		mergedConfig = mergedConfig.replace(/(^|\n)proxies\s*:\s*\[\s*\]\s*\n/, `$1proxies:\n${extraProxyContent}\n`);
+	} else if (mergedConfig.includes('\nproxy-groups:')) {
+		mergedConfig = mergedConfig.replace('\nproxy-groups:', `\n${extraProxyContent}\nproxy-groups:`);
+	} else if (mergedConfig.includes('proxies:')) {
+		mergedConfig = `${mergedConfig}\n${extraProxyContent}`;
 	}
-	if (mainConfig.includes('proxies:')) {
-		return `${mainConfig}\n${extraProxyContent}`;
-	}
-	return mainConfig;
+
+	const extraProxyNames = extractProxyNames(`proxies:\n${extraProxyContent}\nproxy-groups:`);
+	return ensureGroupReferences(mergedConfig, ['手动选择'], extraProxyNames);
 }
 
 async function buildResidentialClashConfig(rawProxyUrls) {
