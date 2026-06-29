@@ -239,6 +239,7 @@ export default {
 					subConverterContent = mergeClashSubscription(subConverterContent, 第三方Clash配置);
 					subConverterContent = await clashFix(subConverterContent);
 					subConverterContent = normalizeLegacyProxyGroupNames(subConverterContent);
+					subConverterContent = ensureRuleTargetGroups(subConverterContent);
 				}
 				// 只有非浏览器订阅才会返回SUBNAME
 				if (!userAgent.includes('mozilla')) responseHeaders["Content-Disposition"] = `attachment; filename*=utf-8''${encodeURIComponent(FileName)}`;
@@ -493,6 +494,47 @@ function normalizeLegacyProxyGroupNames(content) {
 		nextContent = nextContent.replace(pattern, replacement);
 	}
 	return nextContent;
+}
+
+function ensureRuleTargetGroups(content) {
+	if (!content || !content.includes('proxy-groups:') || !content.includes('rules:')) return content;
+	const groupNames = extractProxyGroupNames(content);
+	const proxyNames = new Set(extractProxyNames(content));
+	const fallbackReferences = groupNames.has('手动选择') ? ['手动选择', 'DIRECT'] : ['DIRECT'];
+	const missingTargets = extractRuleTargets(content).filter(target => {
+		return target && !isBuiltInClashPolicy(target) && !groupNames.has(target) && !proxyNames.has(target);
+	});
+	const uniqueMissingTargets = [...new Set(missingTargets)];
+	if (uniqueMissingTargets.length === 0) return content;
+
+	const missingGroups = uniqueMissingTargets.map(target => buildProxyGroupYaml(target, 'select', fallbackReferences)).join('\n');
+	return content.replace(/(^|\n)proxy-groups:\n/, `$1proxy-groups:\n${missingGroups}\n`);
+}
+
+function extractRuleTargets(content) {
+	const targets = [];
+	const lines = content.includes('\r\n') ? content.split('\r\n') : content.split('\n');
+	let inRules = false;
+	for (const line of lines) {
+		const trimmed = line.trim();
+		if (trimmed === 'rules:') {
+			inRules = true;
+			continue;
+		}
+		if (inRules && line && !/^\s/.test(line) && /^[^#\s][^:]*:/.test(line)) break;
+		if (!inRules || !trimmed.startsWith('- ') || trimmed.startsWith('- #')) continue;
+
+		const ruleParts = trimmed.slice(2).split(',').map(part => unquoteYamlValue(part.trim())).filter(Boolean);
+		if (ruleParts.length < 2) continue;
+		let target = ruleParts[ruleParts.length - 1];
+		if (/^no-resolve$/i.test(target) && ruleParts.length >= 3) target = ruleParts[ruleParts.length - 2];
+		targets.push(target);
+	}
+	return targets;
+}
+
+function isBuiltInClashPolicy(target) {
+	return /^(DIRECT|REJECT|REJECT-DROP|REJECT-TINYGIF|PASS|GLOBAL)$/i.test(target);
 }
 
 function removeLegacyProxyGroups(content, removableGroups) {
