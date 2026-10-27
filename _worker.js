@@ -121,12 +121,18 @@ export default {
 			let 订阅链接 = "";
 			let 家宽原始节点 = "";
 			for (let x of 重新汇总所有链接) {
-				if (x.toLowerCase().startsWith('http')) {
+				if (x.toLowerCase().startsWith('http://') || x.toLowerCase().startsWith('https://')) {
 					订阅链接 += x + '\n';
 				} else if (isRawSocksProxyUrl(x)) {
 					家宽原始节点 += x + '\n';
-				} else {
+				} else if (/^(vless|vmess|ss|ssr|trojan|tuic|hysteria2?|hy2):\/\//i.test(x)) {
 					自建节点 += x + '\n';
+					// 兼容 v2rayN 等仅识别 hy2:// 或仅识别 hysteria2:// 的客户端
+					if (x.toLowerCase().startsWith('hysteria2://')) {
+						自建节点 += 'hy2://' + x.slice('hysteria2://'.length) + '\n';
+					} else if (x.toLowerCase().startsWith('hy2://')) {
+						自建节点 += 'hysteria2://' + x.slice('hy2://'.length) + '\n';
+					}
 				}
 			}
 			MainData = 自建节点;
@@ -159,10 +165,17 @@ export default {
 						const subConverterResponse = await fetch(subConverterUrl, { headers: { 'User-Agent': 'v2rayN/CF-Workers-SUB  (https://github.com/cmliu/CF-Workers-SUB)' } });
 						if (subConverterResponse.ok) {
 							const subConverterContent = await subConverterResponse.text();
-							req_data += '\n' + atob(subConverterContent);
+							const trimmedContent = subConverterContent.trim();
+							if (isValidBase64(trimmedContent)) {
+								try {
+									req_data += '\n' + base64Decode(trimmedContent);
+								} catch (e) {
+									console.error('Base64解码失败:', e);
+								}
+							}
 						}
 					} catch (error) {
-						console.log('订阅转换请回base64失败，检查订阅转换后端是否正常运行');
+						console.log('订阅转换请回base64失败，检查订阅转换后端是否正常运行:', error);
 					}
 				}
 			}
@@ -175,8 +188,8 @@ export default {
 			const utf8Decoder = new TextDecoder();
 			const text = utf8Decoder.decode(encodedData);
 
-			//去重
-			const uniqueLines = new Set(text.split('\n'));
+			//去重并过滤空行和注释行
+			const uniqueLines = new Set(text.split('\n').map(l => l.trim()).filter(l => l && !l.startsWith('#') && !l.startsWith('//')));
 			const result = [...uniqueLines].join('\n');
 			//console.log(result);
 
@@ -253,11 +266,9 @@ export default {
 
 async function ADD(envadd) {
 	var addtext = envadd.replace(/[	"'|\r\n]+/g, '\n').replace(/\n+/g, '\n');	// 替换为换行
-	//console.log(addtext);
 	if (addtext.charAt(0) == '\n') addtext = addtext.slice(1);
 	if (addtext.charAt(addtext.length - 1) == '\n') addtext = addtext.slice(0, addtext.length - 1);
-	const add = addtext.split('\n');
-	//console.log(add);
+	const add = addtext.split('\n').map(item => item.trim()).filter(item => item && !item.startsWith('#') && !item.startsWith('//'));
 	return add;
 }
 
@@ -364,19 +375,246 @@ function resolveSubscriptionRequest(url, userAgent, isSubConverterRequest = fals
 	return { format: 'base64', appendUA: 'v2rayn' };
 }
 
+function decodeBase64Safely(str) {
+	try {
+		const bytes = new Uint8Array(atob(str).split("").map(c => c.charCodeAt(0)));
+		return new TextDecoder("utf-8").decode(bytes);
+	} catch {
+		try { return atob(str); } catch { return ""; }
+	}
+}
+
+function parseNodeToClashProxy(line) {
+	try {
+		const raw = (line || "").trim();
+		if (!raw || !raw.includes("://")) return null;
+		const scheme = raw.split("://")[0].toLowerCase();
+		if (scheme === "ss") {
+			const after = raw.slice(5);
+			const [main, hash] = after.split("#");
+			const name = hash ? decodeURIComponent(hash) : "Shadowsocks";
+			let credsServer = main;
+			if (credsServer.includes("?")) credsServer = credsServer.split("?")[0];
+			let cipher, password, server, port;
+			if (credsServer.includes("@")) {
+				const [creds, serv] = credsServer.split("@");
+				let decodedCreds = creds;
+				try { decodedCreds = atob(creds); } catch {}
+				[cipher, password] = decodedCreds.split(":");
+				[server, port] = serv.split(":");
+			} else {
+				let decoded;
+				try { decoded = atob(credsServer); } catch { return null; }
+				const [creds, serv] = decoded.split("@");
+				[cipher, password] = creds.split(":");
+				[server, port] = serv.split(":");
+			}
+			return { name, server, port: parseInt(port, 10), type: "ss", cipher, password };
+		}
+		if (scheme === "trojan") {
+			const u = new URL(raw);
+			return {
+				name: u.hash ? decodeURIComponent(u.hash.slice(1)) : `${u.hostname}:${u.port}`,
+				server: u.hostname.replace(/^\[|\]$/g, ""),
+				port: parseInt(u.port || "443", 10),
+				type: "trojan",
+				password: decodeURIComponent(u.username || ""),
+				sni: u.searchParams.get("sni") || u.hostname,
+				"skip-cert-verify": true,
+			};
+		}
+		if (scheme === "vmess") {
+			const b64part = raw.slice(8);
+			let jsonStr;
+			try { jsonStr = atob(b64part); } catch { return null; }
+			const data = JSON.parse(jsonStr);
+			return {
+				name: data.ps || `${data.add}:${data.port}`,
+				server: data.add,
+				port: parseInt(data.port, 10),
+				type: "vmess",
+				uuid: data.id,
+				alterId: parseInt(data.aid || "0", 10),
+				cipher: data.scy || "auto",
+				tls: data.tls === "tls",
+				network: data.net || "tcp",
+			};
+		}
+		const u = new URL(raw);
+		const name = u.hash ? decodeURIComponent(u.hash.slice(1)) : `${u.hostname}:${u.port}`;
+		if (scheme === "vless") {
+			const sec = u.searchParams.get("security") || "";
+			const isReality = sec === "reality";
+			const isTls = sec === "tls" || isReality;
+			const p = {
+				name,
+				server: u.hostname.replace(/^\[|\]$/g, ""),
+				port: parseInt(u.port || "443", 10),
+				type: "vless",
+				uuid: u.username,
+				tls: isTls,
+				"skip-cert-verify": true,
+				network: u.searchParams.get("type") || "tcp",
+			};
+			if (u.searchParams.get("flow")) p.flow = u.searchParams.get("flow");
+			if (u.searchParams.get("sni")) p.servername = u.searchParams.get("sni");
+			if (u.searchParams.get("fp")) p["client-fingerprint"] = u.searchParams.get("fp");
+			if (u.searchParams.get("alpn")) p.alpn = u.searchParams.get("alpn").split(",");
+			if (isReality) {
+				p["reality-opts"] = {
+					"public-key": u.searchParams.get("pbk") || "",
+					"short-id": u.searchParams.get("sid") || "",
+				};
+			}
+			return p;
+		}
+		if (scheme === "hysteria2" || scheme === "hy2") {
+			const p = {
+				name,
+				server: u.hostname.replace(/^\[|\]$/g, ""),
+				port: parseInt(u.port || "443", 10),
+				type: "hysteria2",
+				password: decodeURIComponent(u.username || ""),
+				auth: decodeURIComponent(u.username || ""),
+				"skip-cert-verify": true,
+				alpn: u.searchParams.get("alpn") ? u.searchParams.get("alpn").split(",") : ["h3"],
+			};
+			if (u.searchParams.get("sni")) p.sni = u.searchParams.get("sni");
+			return p;
+		}
+		if (scheme === "tuic") {
+			const p = {
+				name,
+				server: u.hostname.replace(/^\[|\]$/g, ""),
+				port: parseInt(u.port || "443", 10),
+				type: "tuic",
+				uuid: u.username,
+				password: decodeURIComponent(u.password || ""),
+				"skip-cert-verify": true,
+				alpn: u.searchParams.get("alpn") ? u.searchParams.get("alpn").split(",") : ["h3"],
+				"udp-relay-mode": u.searchParams.get("udp_relay_mode") || "native",
+				"congestion-controller": u.searchParams.get("congestion_control") || "bbr",
+			};
+			if (u.searchParams.get("sni")) p.sni = u.searchParams.get("sni");
+			return p;
+		}
+	} catch (e) {}
+	return null;
+}
+
+function formatFallbackClashConfig(base64Data, reason = '') {
+	const text = decodeBase64Safely(base64Data);
+	const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
+	const proxies = [];
+	const seen = new Set();
+	for (const line of lines) {
+		const p = parseNodeToClashProxy(line);
+		if (p && !seen.has(p.name)) {
+			seen.add(p.name);
+			proxies.push(p);
+		}
+	}
+	if (proxies.length === 0) {
+		return [
+			'proxies: []',
+			'proxy-groups:',
+			'  - name: 🔮 全局策略',
+			'    type: select',
+			'    proxies:',
+			'      - DIRECT',
+			'rules:',
+			'  - MATCH,DIRECT',
+			reason ? `# ${reason}` : '',
+		].filter(Boolean).join('\n') + '\n';
+	}
+
+	const proxyNames = proxies.map(p => p.name);
+	const usNames = proxyNames.filter(name => /us|united\s*states|america|美国|🇺🇸/i.test(name));
+	const usSelectProxies = usNames.length > 0 ? usNames : ['手动选择', 'DIRECT'];
+
+	const proxyYamlLines = proxies.map(p => '  - ' + JSON.stringify(p)).join('\n');
+	const manualProxyList = proxyNames.map(n => `      - ${JSON.stringify(n)}`).join('\n');
+	const usProxyList = usSelectProxies.map(n => `      - ${JSON.stringify(n)}`).join('\n');
+
+	return `port: 10808
+socks-port: 7891
+allow-lan: true
+mode: Rule
+log-level: info
+profile:
+  store-selected: true
+  store-fake-ip: true
+dns:
+  enable: true
+  ipv6: false
+  enhanced-mode: fake-ip
+  nameserver:
+    - https://223.5.5.5/dns-query
+    - https://1.1.1.1/dns-query
+proxies:
+${proxyYamlLines}
+proxy-groups:
+  - name: 🔮 全局策略
+    type: select
+    proxies:
+      - 手动选择
+      - 🤖 Claude
+      - 🤖 OpenAI
+      - DIRECT
+  - name: 手动选择
+    type: select
+    proxies:
+${manualProxyList}
+  - name: 🤖 Claude
+    type: select
+    proxies:
+      - US手动选择
+      - 手动选择
+      - DIRECT
+  - name: 🤖 OpenAI
+    type: select
+    proxies:
+      - US手动选择
+      - 手动选择
+      - DIRECT
+  - name: US手动选择
+    type: select
+    proxies:
+${usProxyList}
+  - name: 🎯 全球直连
+    type: select
+    proxies:
+      - DIRECT
+  - name: 🛑 广告拦截
+    type: select
+    proxies:
+      - REJECT
+      - DIRECT
+  - name: 🐟 漏网之鱼
+    type: select
+    proxies:
+      - 🔮 全局策略
+      - 手动选择
+      - DIRECT
+rules:
+  - DOMAIN-SUFFIX,anthropic.com,🤖 Claude
+  - DOMAIN-SUFFIX,claude.ai,🤖 Claude
+  - DOMAIN-SUFFIX,claude.com,🤖 Claude
+  - DOMAIN-SUFFIX,claudeusercontent.com,🤖 Claude
+  - DOMAIN-SUFFIX,openai.com,🤖 OpenAI
+  - DOMAIN-SUFFIX,chatgpt.com,🤖 OpenAI
+  - DOMAIN-SUFFIX,oaistatic.com,🤖 OpenAI
+  - DOMAIN-SUFFIX,oaiusercontent.com,🤖 OpenAI
+  - DOMAIN-SUFFIX,cn,🎯 全球直连
+  - GEOIP,CN,🎯 全球直连,no-resolve
+  - MATCH,🐟 漏网之鱼
+${reason ? `# ${reason}` : ''}
+`;
+}
+
 function buildFormatFallbackResponse(format, base64Data, reason = '') {
 	if (format !== 'clash') return base64Data;
-	return [
-		'proxies: []',
-		'proxy-groups:',
-		'  - name: 🔮 全局策略',
-		'    type: select',
-		'    proxies:',
-		'      - DIRECT',
-		'rules:',
-		'  - MATCH,DIRECT',
-		reason ? `# ${reason}` : '',
-	].filter(Boolean).join('\n') + '\n';
+	return formatFallbackClashConfig(base64Data, reason);
 }
 
 function resolveSubConfig(rawValue, origin, fakeToken) {
@@ -1087,17 +1325,31 @@ function normalizeProxyHost(server) {
 }
 
 async function MD5MD5(text) {
-	const encoder = new TextEncoder();
+	try {
+		const encoder = new TextEncoder();
+		const firstPass = await crypto.subtle.digest('MD5', encoder.encode(text));
+		const firstPassArray = Array.from(new Uint8Array(firstPass));
+		const firstHex = firstPassArray.map(b => b.toString(16).padStart(2, '0')).join('');
 
-	const firstPass = await crypto.subtle.digest('MD5', encoder.encode(text));
-	const firstPassArray = Array.from(new Uint8Array(firstPass));
-	const firstHex = firstPassArray.map(b => b.toString(16).padStart(2, '0')).join('');
+		const secondPass = await crypto.subtle.digest('MD5', encoder.encode(firstHex.slice(7, 27)));
+		const secondPassArray = Array.from(new Uint8Array(secondPass));
+		const secondHex = secondPassArray.map(b => b.toString(16).padStart(2, '0')).join('');
 
-	const secondPass = await crypto.subtle.digest('MD5', encoder.encode(firstHex.slice(7, 27)));
-	const secondPassArray = Array.from(new Uint8Array(secondPass));
-	const secondHex = secondPassArray.map(b => b.toString(16).padStart(2, '0')).join('');
-
-	return secondHex.toLowerCase();
+		return secondHex.toLowerCase();
+	} catch {
+		try {
+			const { createHash } = await import('node:crypto');
+			const h1 = createHash('md5').update(text).digest('hex');
+			const h2 = createHash('md5').update(h1.slice(7, 27)).digest('hex');
+			return h2.toLowerCase();
+		} catch {
+			let h = 0;
+			for (let i = 0; i < text.length; i++) {
+				h = Math.imul(31, h) + text.charCodeAt(i) | 0;
+			}
+			return Math.abs(h).toString(16).padStart(32, '0');
+		}
+	}
 }
 
 function clashFix(content) {
@@ -1179,12 +1431,12 @@ async function getSUB(api, request, 追加UA, userAgentHeader, relayBaseUrl = ''
 	let 异常订阅 = "";
 	const controller = new AbortController(); // 创建一个AbortController实例，用于取消请求
 	const timeout = setTimeout(() => {
-		controller.abort(); // 2秒后取消所有请求
-	}, 2000);
+		controller.abort(); // 8秒后取消请求
+	}, 8000);
 
 	try {
 		// 使用Promise.allSettled等待所有API请求完成，无论成功或失败
-		const responses = await Promise.allSettled(api.map(apiUrl => getUrl(request, apiUrl, 追加UA, userAgentHeader).then(response => response.ok ? response.text() : Promise.reject(response))));
+		const responses = await Promise.allSettled(api.map(apiUrl => getUrl(request, apiUrl, 追加UA, userAgentHeader, controller.signal).then(response => response.ok ? response.text() : Promise.reject(response))));
 
 		// 遍历所有响应
 		const modifiedResponses = responses.map((response, index) => {
@@ -1243,8 +1495,7 @@ async function getSUB(api, request, 追加UA, userAgentHeader, relayBaseUrl = ''
 					订阅转换URLs += "|" + response.apiUrl;
 				}
 			} else {
-				console.log('订阅请求失败，转交订阅转换器: ' + response.apiUrl);
-				订阅转换URLs += "|" + response.apiUrl;
+				console.log('订阅请求失败，跳过不可用外部订阅: ' + response.apiUrl);
 			}
 		}
 	} catch (error) {
@@ -1258,7 +1509,7 @@ async function getSUB(api, request, 追加UA, userAgentHeader, relayBaseUrl = ''
 	return [订阅内容, 订阅转换URLs, 第三方Clash配置];
 }
 
-async function getUrl(request, targetUrl, 追加UA, userAgentHeader) {
+async function getUrl(request, targetUrl, 追加UA, userAgentHeader, signal = null) {
 	// 设置自定义 User-Agent
 	const newHeaders = new Headers(request.headers);
 	newHeaders.set("User-Agent", getSubscriptionUA(追加UA, userAgentHeader));
@@ -1267,6 +1518,7 @@ async function getUrl(request, targetUrl, 追加UA, userAgentHeader) {
 	const modifiedRequest = new Request(targetUrl, {
 		method: request.method,
 		headers: newHeaders,
+		signal: signal || undefined,
 		body: request.method === "GET" ? null : request.body,
 		redirect: "follow",
 		cf: {
