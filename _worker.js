@@ -157,7 +157,8 @@ export default {
 				const 请求订阅响应内容 = await getSUB(订阅链接数组, request, 追加UA, userAgentHeader, `${url.origin}${订阅中转路径}`);
 				console.log(请求订阅响应内容);
 				req_data += 请求订阅响应内容[0].join('\n');
-				订阅转换URL += "|" + 请求订阅响应内容[1];
+				const extraSubUrls = (请求订阅响应内容[1] || '').trim().replace(/^\|+|\|+$/g, '');
+				if (extraSubUrls) 订阅转换URL += "|" + extraSubUrls;
 				第三方Clash配置.push(...(请求订阅响应内容[2] || []));
 				if (订阅格式 === 'base64' && !isSubConverterRequest && 请求订阅响应内容[1].includes('://')) {
 					subConverterUrl = `${subProtocol}://${subConverter}/sub?target=mixed&url=${encodeURIComponent(请求订阅响应内容[1])}&insert=false&config=${encodeURIComponent(subConfigInfo.converterUrl)}&emoji=true&list=false&tfo=false&scv=true&fdn=false&sort=false&new_name=true`;
@@ -180,7 +181,11 @@ export default {
 				}
 			}
 
-			if (env.WARP) 订阅转换URL += "|" + (await ADD(env.WARP)).join("|");
+			if (env.WARP) {
+				const warpUrls = (await ADD(env.WARP)).join("|").replace(/^\|+|\|+$/g, '');
+				if (warpUrls) 订阅转换URL += "|" + warpUrls;
+			}
+			订阅转换URL = 订阅转换URL.replace(/\|+/g, '|').replace(/^\|+|\|+$/g, '');
 			//修复中文错误
 			const utf8Encoder = new TextEncoder();
 			const encodedData = utf8Encoder.encode(req_data);
@@ -529,14 +534,24 @@ function formatFallbackClashConfig(base64Data, reason = '') {
 	}
 
 	const proxyNames = proxies.map(p => p.name);
-	const usNames = proxyNames.filter(name => /us|united\s*states|america|美国|🇺🇸/i.test(name));
-	const usSelectProxies = usNames.length > 0 ? usNames : ['手动选择', 'DIRECT'];
+	const usNames = proxyNames.filter(name => /(美国|United\s?States|America|洛杉矶|Los\s?Angeles|圣何塞|San\s?Jose|西雅图|Seattle|达拉斯|Dallas|纽约|New\s?York|(?:^|\s|[-_\[\(])(USA|US)\d{0,3}(?:$|\s|[-_\]\)])|🇺🇸)/i.test(name));
+	const jpNames = proxyNames.filter(name => /(日本|Japan|东京|Tokyo|大阪|Osaka|(?:^|\s|[-_\[\(])JP\d{0,3}(?:$|\s|[-_\]\)])|🇯🇵)/i.test(name));
+	const hkNames = proxyNames.filter(name => /(香港|Hong\s?Kong|Hongkong|(?:^|\s|[-_\[\(])HK\d{0,3}(?:$|\s|[-_\]\)])|(?:^|\s|[-_\[\(])HKG\d{0,3}(?:$|\s|[-_\]\)])|🇭🇰)/i.test(name));
+	const twNames = proxyNames.filter(name => /(台湾|台灣|Taiwan|台北|Taipei|(?:^|\s|[-_\[\(])TW\d{0,3}(?:$|\s|[-_\]\)])|(?:^|\s|[-_\[\(])TPE\d{0,3}(?:$|\s|[-_\]\)])|🇹🇼)/i.test(name));
+	const sgNames = proxyNames.filter(name => /(新加坡|狮城|Singapore|(?:^|\s|[-_\[\(])SG\d{0,3}(?:$|\s|[-_\]\)])|(?:^|\s|[-_\[\(])SGP\d{0,3}(?:$|\s|[-_\]\)])|🇸🇬)/i.test(name));
+	const krNames = proxyNames.filter(name => /(韩国|Korea|首尔|Seoul|(?:^|\s|[-_\[\(])KR\d{0,3}(?:$|\s|[-_\]\)])|🇰🇷)/i.test(name));
+
+	const usSelect = usNames.length > 0 ? usNames : ['手动选择', 'DIRECT'];
+	const jpSelect = jpNames.length > 0 ? jpNames : ['手动选择', 'DIRECT'];
+	const hkSelect = hkNames.length > 0 ? hkNames : ['手动选择', 'DIRECT'];
+	const twSelect = twNames.length > 0 ? twNames : ['手动选择', 'DIRECT'];
+	const sgSelect = sgNames.length > 0 ? sgNames : ['手动选择', 'DIRECT'];
+	const krSelect = krNames.length > 0 ? krNames : ['手动选择', 'DIRECT'];
 
 	const proxyYamlLines = proxies.map(p => '  - ' + JSON.stringify(p)).join('\n');
-	const manualProxyList = proxyNames.map(n => `      - ${JSON.stringify(n)}`).join('\n');
-	const usProxyList = usSelectProxies.map(n => `      - ${JSON.stringify(n)}`).join('\n');
+	const formatProxies = (arr) => arr.map(n => `      - ${JSON.stringify(n)}`).join('\n');
 
-	return `port: 10808
+	const yaml = `port: 10808
 socks-port: 7891
 allow-lan: true
 mode: Rule
@@ -558,37 +573,251 @@ proxy-groups:
     type: select
     proxies:
       - 手动选择
-      - 🤖 Claude
-      - 🤖 OpenAI
+      - HK手动选择
+      - TW手动选择
+      - SG手动选择
+      - JP手动选择
+      - US手动选择
+      - US节点选择
+      - KR手动选择
       - DIRECT
   - name: 手动选择
     type: select
     proxies:
-${manualProxyList}
+${formatProxies(proxyNames)}
+  - name: 🧩 自定义扩展
+    type: select
+    proxies:
+      - 手动选择
+      - DIRECT
+      - 🔮 全局策略
+      - HK手动选择
+      - TW手动选择
+      - SG手动选择
+      - JP手动选择
+      - US手动选择
+      - US节点选择
+      - KR手动选择
   - name: 🤖 Claude
     type: select
     proxies:
       - US手动选择
+      - US节点选择
+      - JP手动选择
+      - SG手动选择
+      - HK手动选择
+      - TW手动选择
+      - KR手动选择
+      - 🔮 全局策略
       - 手动选择
       - DIRECT
   - name: 🤖 OpenAI
     type: select
     proxies:
       - US手动选择
+      - US节点选择
+      - JP手动选择
+      - SG手动选择
+      - HK手动选择
+      - TW手动选择
+      - KR手动选择
+      - 🔮 全局策略
       - 手动选择
       - DIRECT
+  - name: 🤖 Gemini
+    type: select
+    proxies:
+      - US手动选择
+      - US节点选择
+      - JP手动选择
+      - SG手动选择
+      - HK手动选择
+      - TW手动选择
+      - KR手动选择
+      - 🔮 全局策略
+      - 手动选择
+      - DIRECT
+  - name: 🤖 XAI
+    type: select
+    proxies:
+      - US手动选择
+      - US节点选择
+      - JP手动选择
+      - SG手动选择
+      - HK手动选择
+      - TW手动选择
+      - KR手动选择
+      - 🔮 全局策略
+      - 手动选择
+      - DIRECT
+  - name: 🤖 wechat
+    type: select
+    proxies:
+      - DIRECT
+      - HK手动选择
+      - TW手动选择
+      - SG手动选择
+      - JP手动选择
+      - US手动选择
+      - US节点选择
+      - KR手动选择
+      - 🔮 全局策略
+      - 手动选择
+  - name: 🎬 奈飞分组
+    type: select
+    proxies:
+      - US节点选择
+      - US手动选择
+      - JP手动选择
+      - SG手动选择
+      - HK手动选择
+      - TW手动选择
+      - KR手动选择
+      - 🔮 全局策略
+      - 手动选择
+      - DIRECT
+  - name: 📱 社交媒体
+    type: select
+    proxies:
+      - 🔮 全局策略
+      - 手动选择
+      - HK手动选择
+      - TW手动选择
+      - SG手动选择
+      - JP手动选择
+      - US手动选择
+      - US节点选择
+      - KR手动选择
+      - DIRECT
+  - name: 📺 YouTube
+    type: select
+    proxies:
+      - 🔮 全局策略
+      - 手动选择
+      - HK手动选择
+      - TW手动选择
+      - SG手动选择
+      - JP手动选择
+      - US手动选择
+      - US节点选择
+      - KR手动选择
+      - DIRECT
+  - name: 🎵 Spotify
+    type: select
+    proxies:
+      - 🔮 全局策略
+      - 手动选择
+      - HK手动选择
+      - TW手动选择
+      - SG手动选择
+      - JP手动选择
+      - US手动选择
+      - US节点选择
+      - KR手动选择
+      - DIRECT
+  - name: 🎮 游戏平台
+    type: select
+    proxies:
+      - DIRECT
+      - 🔮 全局策略
+      - 手动选择
+      - HK手动选择
+      - TW手动选择
+      - SG手动选择
+      - JP手动选择
+      - US手动选择
+      - US节点选择
+      - KR手动选择
+  - name: 🎮 Dota2
+    type: select
+    proxies:
+      - SG手动选择
+      - JP手动选择
+      - HK手动选择
+      - TW手动选择
+      - US手动选择
+      - US节点选择
+      - KR手动选择
+      - 🔮 全局策略
+      - 手动选择
+      - DIRECT
+  - name: 💻 微软服务
+    type: select
+    proxies:
+      - DIRECT
+      - 🔮 全局策略
+      - 手动选择
+      - HK手动选择
+      - TW手动选择
+      - SG手动选择
+      - JP手动选择
+      - US手动选择
+      - US节点选择
+      - KR手动选择
+  - name: 🍎 苹果服务
+    type: select
+    proxies:
+      - DIRECT
+      - 🔮 全局策略
+      - 手动选择
+      - HK手动选择
+      - TW手动选择
+      - SG手动选择
+      - JP手动选择
+      - US手动选择
+      - US节点选择
+      - KR手动选择
+  - name: HK手动选择
+    type: select
+    proxies:
+${formatProxies(hkSelect)}
+  - name: TW手动选择
+    type: select
+    proxies:
+${formatProxies(twSelect)}
+  - name: SG手动选择
+    type: select
+    proxies:
+${formatProxies(sgSelect)}
+  - name: JP手动选择
+    type: select
+    proxies:
+${formatProxies(jpSelect)}
   - name: US手动选择
     type: select
     proxies:
-${usProxyList}
+${formatProxies(usSelect)}
+  - name: US节点选择
+    type: select
+    proxies:
+      - US手动选择
+${formatProxies(usSelect)}
+  - name: KR手动选择
+    type: select
+    proxies:
+${formatProxies(krSelect)}
   - name: 🎯 全球直连
     type: select
     proxies:
       - DIRECT
+      - REJECT
   - name: 🛑 广告拦截
     type: select
     proxies:
       - REJECT
+      - DIRECT
+  - name: 🔒 IP 伪装
+    type: select
+    proxies:
+      - 🔮 全局策略
+      - 手动选择
+      - HK手动选择
+      - TW手动选择
+      - SG手动选择
+      - JP手动选择
+      - US手动选择
+      - US节点选择
+      - KR手动选择
       - DIRECT
   - name: 🐟 漏网之鱼
     type: select
@@ -596,6 +825,13 @@ ${usProxyList}
       - 🔮 全局策略
       - 手动选择
       - DIRECT
+      - HK手动选择
+      - TW手动选择
+      - SG手动选择
+      - JP手动选择
+      - US手动选择
+      - US节点选择
+      - KR手动选择
 rules:
   - DOMAIN-SUFFIX,anthropic.com,🤖 Claude
   - DOMAIN-SUFFIX,claude.ai,🤖 Claude
@@ -610,6 +846,7 @@ rules:
   - MATCH,🐟 漏网之鱼
 ${reason ? `# ${reason}` : ''}
 `;
+	return ensureRuleTargetGroups(yaml);
 }
 
 function buildFormatFallbackResponse(format, base64Data, reason = '') {
